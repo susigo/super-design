@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { access, appendFile, chmod, cp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, dirname, join, relative } from "node:path";
+import { basename, delimiter, dirname, join, relative } from "node:path";
 import { promisify } from "node:util";
 
 import {
@@ -34,6 +34,7 @@ import { winResources } from "./resources.js";
 
 const execFileAsync = promisify(execFile);
 const PRODUCT_NAME = "Open Design";
+const CLAUDE_GIT_BASH_ENV = "CLAUDE_CODE_GIT_BASH_PATH";
 const DESKTOP_LOG_ECHO_ENV = "OD_DESKTOP_LOG_ECHO";
 const NSIS_INSTALLER_LANGUAGE_BY_WEB_LOCALE = {
   en: "en_US",
@@ -58,6 +59,11 @@ const INTERNAL_PACKAGES = [
 type PackedTarballInfo = {
   fileName: string;
   packageName: (typeof INTERNAL_PACKAGES)[number]["name"];
+};
+
+type WinGitRuntimeResolution = {
+  bashPath: string;
+  root: string;
 };
 
 type WinPaths = {
@@ -390,6 +396,90 @@ async function pathExists(filePath: string): Promise<boolean> {
   }
 }
 
+function readEnvCaseInsensitive(env: NodeJS.ProcessEnv, key: string): string | undefined {
+  const value = env[key];
+  if (value != null) return value;
+  const normalizedKey = key.toLowerCase();
+  const matchingKey = Object.keys(env).find((entry) => entry.toLowerCase() === normalizedKey);
+  return matchingKey == null ? undefined : env[matchingKey];
+}
+
+function gitRootFromBashPath(bashPath: string): string | null {
+  const normalized = bashPath.replace(/\\/g, "/").toLowerCase();
+  if (normalized.endsWith("/bin/bash.exe")) return dirname(dirname(bashPath));
+  if (normalized.endsWith("/usr/bin/bash.exe")) return dirname(dirname(dirname(bashPath)));
+  return null;
+}
+
+function gitRootFromGitPath(gitPath: string): string | null {
+  const normalized = gitPath.replace(/\\/g, "/").toLowerCase();
+  if (normalized.endsWith("/cmd/git.exe")) return dirname(dirname(gitPath));
+  if (normalized.endsWith("/bin/git.exe")) return dirname(dirname(gitPath));
+  if (normalized.endsWith("/mingw64/bin/git.exe")) return dirname(dirname(dirname(gitPath)));
+  return null;
+}
+
+async function resolveGitRuntimeFromRoot(root: string): Promise<WinGitRuntimeResolution | null> {
+  const bashCandidates = [join(root, "bin", "bash.exe"), join(root, "usr", "bin", "bash.exe")];
+  const gitCandidates = [
+    join(root, "cmd", "git.exe"),
+    join(root, "bin", "git.exe"),
+    join(root, "mingw64", "bin", "git.exe"),
+  ];
+  const bashPath = (await Promise.all(bashCandidates.map(async (candidate) => ((await pathExists(candidate)) ? candidate : null))))
+    .find((candidate): candidate is string => candidate != null);
+  if (bashPath == null) return null;
+  const hasGit = (await Promise.all(gitCandidates.map(pathExists))).some(Boolean);
+  return hasGit ? { bashPath, root } : null;
+}
+
+async function resolveGitRuntimeFromBashPath(bashPath: string | undefined): Promise<WinGitRuntimeResolution | null> {
+  if (bashPath == null || bashPath.length === 0 || !(await pathExists(bashPath))) return null;
+  const root = gitRootFromBashPath(bashPath);
+  return root == null ? null : await resolveGitRuntimeFromRoot(root);
+}
+
+async function resolveGitRuntimeFromPath(pathValue: string): Promise<WinGitRuntimeResolution | null> {
+  for (const entry of pathValue.split(delimiter)) {
+    if (entry.length === 0) continue;
+    const bashRuntime = await resolveGitRuntimeFromBashPath(join(entry, "bash.exe"));
+    if (bashRuntime != null) return bashRuntime;
+    const gitPath = join(entry, "git.exe");
+    if (!(await pathExists(gitPath))) continue;
+    const gitRoot = gitRootFromGitPath(gitPath);
+    if (gitRoot == null) continue;
+    const gitRuntime = await resolveGitRuntimeFromRoot(gitRoot);
+    if (gitRuntime != null) return gitRuntime;
+  }
+  return null;
+}
+
+async function resolveLocalGitRuntime(env: NodeJS.ProcessEnv = process.env): Promise<WinGitRuntimeResolution | null> {
+  const explicit = await resolveGitRuntimeFromBashPath(readEnvCaseInsensitive(env, CLAUDE_GIT_BASH_ENV));
+  if (explicit != null) return explicit;
+
+  const commonRoots = [
+    readEnvCaseInsensitive(env, "ProgramFiles") == null
+      ? undefined
+      : join(readEnvCaseInsensitive(env, "ProgramFiles") as string, "Git"),
+    readEnvCaseInsensitive(env, "ProgramFiles(x86)") == null
+      ? undefined
+      : join(readEnvCaseInsensitive(env, "ProgramFiles(x86)") as string, "Git"),
+    readEnvCaseInsensitive(env, "LOCALAPPDATA") == null
+      ? undefined
+      : join(readEnvCaseInsensitive(env, "LOCALAPPDATA") as string, "Programs", "Git"),
+    readEnvCaseInsensitive(env, "USERPROFILE") == null
+      ? undefined
+      : join(readEnvCaseInsensitive(env, "USERPROFILE") as string, "scoop", "apps", "git", "current"),
+  ].filter((entry): entry is string => entry != null && entry.length > 0);
+  for (const root of commonRoots) {
+    const runtime = await resolveGitRuntimeFromRoot(root);
+    if (runtime != null) return runtime;
+  }
+
+  return await resolveGitRuntimeFromPath(readEnvCaseInsensitive(env, "PATH") ?? "");
+}
+
 async function listChildDirectories(root: string): Promise<string[]> {
   try {
     const entries = await readdir(root, { withFileTypes: true });
@@ -619,6 +709,20 @@ async function buildWorkspaceArtifacts(config: ToolPackConfig): Promise<void> {
   await runPnpm(config, ["--filter", "@open-design/packaged", "build"]);
 }
 
+async function copyBundledGitRuntime(paths: WinPaths): Promise<void> {
+  const runtime = await resolveLocalGitRuntime();
+  if (runtime == null) {
+    process.stderr.write(
+      "[tools-pack] warning: Git for Windows runtime not found; packaged app will rely on system Git Bash or CLAUDE_CODE_GIT_BASH_PATH\n",
+    );
+    return;
+  }
+
+  const targetRoot = join(paths.resourceRoot, "git");
+  await cp(runtime.root, targetRoot, { recursive: true });
+  process.stderr.write(`[tools-pack] bundled Git runtime from ${runtime.root} to ${targetRoot}\n`);
+}
+
 async function copyResourceTree(config: ToolPackConfig, paths: WinPaths): Promise<void> {
   await removeTree(paths.resourceRoot);
   await mkdir(paths.resourceRoot, { recursive: true });
@@ -628,6 +732,7 @@ async function copyResourceTree(config: ToolPackConfig, paths: WinPaths): Promis
   await mkdir(join(paths.resourceRoot, "bin"), { recursive: true });
   await cp(process.execPath, join(paths.resourceRoot, "bin", "node.exe"));
   await chmod(join(paths.resourceRoot, "bin", "node.exe"), 0o755).catch(() => undefined);
+  await copyBundledGitRuntime(paths);
 }
 
 async function copyWinIcon(paths: WinPaths): Promise<void> {

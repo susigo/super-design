@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdir, open, type FileHandle } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
@@ -27,7 +28,40 @@ import { createProcessStampArgs, stopProcesses, waitForProcessExit } from "@open
 import type { PackagedNamespacePaths } from "./paths.js";
 
 const require = createRequire(import.meta.url);
+const CLAUDE_GIT_BASH_ENV = "CLAUDE_CODE_GIT_BASH_PATH";
 const PACKAGED_CHILD_ENV_ALLOWLIST = ["HOME", "LANG", "LC_ALL", "LOGNAME", "TMPDIR", "USER"] as const;
+const PACKAGED_CHILD_WINDOWS_ENV_ALLOWLIST = [
+  "ALLUSERSPROFILE",
+  "APPDATA",
+  "CommonProgramFiles",
+  "CommonProgramFiles(x86)",
+  "ComSpec",
+  "COMSPEC",
+  "HOMEDRIVE",
+  "HOMEPATH",
+  "LOCALAPPDATA",
+  "PATHEXT",
+  "PROCESSOR_ARCHITECTURE",
+  "PROCESSOR_ARCHITEW6432",
+  "ProgramData",
+  "PROGRAMDATA",
+  "ProgramFiles",
+  "PROGRAMFILES",
+  "ProgramFiles(x86)",
+  "SystemRoot",
+  "TEMP",
+  "TMP",
+  "USERDOMAIN",
+  "USERNAME",
+  "USERPROFILE",
+  "WINDIR",
+  CLAUDE_GIT_BASH_ENV,
+] as const;
+
+type GitBashResolution = {
+  bashPath: string;
+  pathEntries: string[];
+};
 
 export type PackagedSidecarHandle = {
   close(): Promise<void>;
@@ -94,30 +128,142 @@ function extractPort(url: string): string {
   return parsed.port || (parsed.protocol === "https:" ? "443" : "80");
 }
 
-function resolvePackagedPathEnv(basePath = process.env.PATH ?? ""): string {
-  const home = homedir();
-  const candidates = [
-    ...basePath.split(delimiter),
-    join(home, ".local", "bin"),
-    join(home, ".opencode", "bin"),
-    join(home, ".cargo", "bin"),
-    join(home, ".bun", "bin"),
-    "/opt/homebrew/bin",
-    "/usr/local/bin",
-    "/usr/bin",
-    "/bin",
-    "/usr/sbin",
-    "/sbin",
-  ];
-  return [...new Set(candidates.filter((entry) => entry.length > 0))].join(delimiter);
+function readEnvCaseInsensitive(env: NodeJS.ProcessEnv, key: string): string | undefined {
+  const value = env[key];
+  if (value != null) return value;
+  const normalizedKey = key.toLowerCase();
+  const matchingKey = Object.keys(env).find((entry) => entry.toLowerCase() === normalizedKey);
+  return matchingKey == null ? undefined : env[matchingKey];
 }
 
-function resolvePackagedChildBaseEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+function existingDirectoryEntries(entries: readonly string[]): string[] {
+  return entries.filter((entry) => entry.length > 0 && existsSync(entry));
+}
+
+function gitPathEntries(gitRoot: string): string[] {
+  return existingDirectoryEntries([
+    join(gitRoot, "cmd"),
+    join(gitRoot, "bin"),
+    join(gitRoot, "usr", "bin"),
+    join(gitRoot, "mingw64", "bin"),
+  ]);
+}
+
+function gitRootFromBashPath(bashPath: string): string | null {
+  const normalized = bashPath.replace(/\\/g, "/").toLowerCase();
+  if (normalized.endsWith("/bin/bash.exe")) return dirname(dirname(bashPath));
+  if (normalized.endsWith("/usr/bin/bash.exe")) return dirname(dirname(dirname(bashPath)));
+  return null;
+}
+
+function gitBashFromRoot(gitRoot: string): GitBashResolution | null {
+  const bashCandidates = [join(gitRoot, "bin", "bash.exe"), join(gitRoot, "usr", "bin", "bash.exe")];
+  const bashPath = bashCandidates.find((candidate) => existsSync(candidate));
+  if (bashPath == null) return null;
+  return { bashPath, pathEntries: gitPathEntries(gitRoot) };
+}
+
+function resolveGitBashFromPath(pathValue: string): GitBashResolution | null {
+  for (const entry of pathValue.split(delimiter)) {
+    if (entry.length === 0) continue;
+    const bashPath = join(entry, "bash.exe");
+    if (!existsSync(bashPath)) continue;
+    const gitRoot = gitRootFromBashPath(bashPath);
+    return { bashPath, pathEntries: gitRoot == null ? [entry] : gitPathEntries(gitRoot) };
+  }
+  return null;
+}
+
+function commonWindowsGitRoots(env: NodeJS.ProcessEnv): string[] {
+  return [
+    readEnvCaseInsensitive(env, "ProgramFiles") == null
+      ? undefined
+      : join(readEnvCaseInsensitive(env, "ProgramFiles") as string, "Git"),
+    readEnvCaseInsensitive(env, "ProgramFiles(x86)") == null
+      ? undefined
+      : join(readEnvCaseInsensitive(env, "ProgramFiles(x86)") as string, "Git"),
+    readEnvCaseInsensitive(env, "LOCALAPPDATA") == null
+      ? undefined
+      : join(readEnvCaseInsensitive(env, "LOCALAPPDATA") as string, "Programs", "Git"),
+    readEnvCaseInsensitive(env, "USERPROFILE") == null
+      ? undefined
+      : join(readEnvCaseInsensitive(env, "USERPROFILE") as string, "scoop", "apps", "git", "current"),
+  ].filter((entry): entry is string => entry != null && entry.length > 0);
+}
+
+function resolveSystemGitBash(env: NodeJS.ProcessEnv, pathValue: string): GitBashResolution | null {
+  return (
+    resolveGitBashFromPath(pathValue) ??
+    commonWindowsGitRoots(env)
+      .map((gitRoot) => gitBashFromRoot(gitRoot))
+      .find((resolution): resolution is GitBashResolution => resolution != null) ??
+    null
+  );
+}
+
+function resolveBundledGitBash(resourceRoot: string): GitBashResolution | null {
+  return gitBashFromRoot(join(resourceRoot, "git"));
+}
+
+function resolvePackagedPathEnv(basePath: string, extraEntries: readonly string[] = []): string {
+  const home = homedir();
+  const candidates = process.platform === "win32"
+    ? [...extraEntries, ...basePath.split(delimiter)]
+    : [
+        ...basePath.split(delimiter),
+        join(home, ".local", "bin"),
+        join(home, ".opencode", "bin"),
+        join(home, ".cargo", "bin"),
+        join(home, ".bun", "bin"),
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        "/usr/bin",
+        "/bin",
+        "/usr/sbin",
+        "/sbin",
+      ];
+  const seen = new Set<string>();
+  const entries: string[] = [];
+  for (const entry of candidates) {
+    if (entry.length === 0) continue;
+    const key = process.platform === "win32" ? entry.toLowerCase() : entry;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    entries.push(entry);
+  }
+  return entries.join(delimiter);
+}
+
+function resolvePackagedChildBaseEnv(
+  paths: PackagedNamespacePaths,
+  env: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
   const baseEnv: NodeJS.ProcessEnv = {};
   for (const key of PACKAGED_CHILD_ENV_ALLOWLIST) {
     const value = env[key];
     if (value != null && value.length > 0) baseEnv[key] = value;
   }
+
+  const basePath = readEnvCaseInsensitive(env, "PATH") ?? "";
+  const userGitBashPath = readEnvCaseInsensitive(env, CLAUDE_GIT_BASH_ENV);
+  let extraPathEntries: string[] = [];
+
+  if (process.platform === "win32") {
+    for (const key of PACKAGED_CHILD_WINDOWS_ENV_ALLOWLIST) {
+      const value = readEnvCaseInsensitive(env, key);
+      if (value != null && value.length > 0) baseEnv[key] = value;
+    }
+
+    if (userGitBashPath == null || userGitBashPath.length === 0) {
+      const gitBash = resolveSystemGitBash(env, basePath) ?? resolveBundledGitBash(paths.resourceRoot);
+      if (gitBash != null) {
+        baseEnv[CLAUDE_GIT_BASH_ENV] = gitBash.bashPath;
+        extraPathEntries = gitBash.pathEntries;
+      }
+    }
+  }
+
+  baseEnv.PATH = resolvePackagedPathEnv(basePath, extraPathEntries);
   return baseEnv;
 }
 
@@ -155,10 +301,9 @@ async function spawnSidecarChild(options: {
     base: options.paths.runtimeRoot,
     contract: OPEN_DESIGN_SIDECAR_CONTRACT,
     extraEnv: {
-      ...resolvePackagedChildBaseEnv(),
+      ...resolvePackagedChildBaseEnv(options.paths),
       ...options.env,
       NODE_ENV: "production",
-      PATH: resolvePackagedPathEnv(),
       ...(options.nodeCommand == null ? { ELECTRON_RUN_AS_NODE: "1" } : {}),
     },
     stamp,
