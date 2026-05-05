@@ -51,6 +51,7 @@ import {
 } from './media-models.js';
 import { resolveProviderConfig } from './media-config.js';
 import { generateImageCapability } from './capabilities/image-gen/index.js';
+import { generateMusicCapability } from './capabilities/music-gen/index.js';
 import { StubProviderDisabledError } from './capabilities/media-utils.js';
 import {
   ensureProject,
@@ -240,6 +241,28 @@ export async function generateMedia(args) {
       output,
       aspect,
       image,
+      db,
+      runId,
+      scenarioId,
+    });
+  }
+
+  // Route music/sfx audio kinds through the music-gen capability so they are
+  // tracked in capability_invocations. Speech (TTS) remains in the legacy
+  // dispatch below; it belongs to a future voice-gen capability (Phase 4).
+  const resolvedAudioKindEarly =
+    surface === 'audio' ? (audioKind || 'music') : undefined;
+  if (surface === 'audio' && resolvedAudioKindEarly !== 'speech') {
+    return generateMusicCapability({
+      projectRoot,
+      projectsRoot,
+      projectId,
+      model,
+      prompt,
+      kind: resolvedAudioKindEarly === 'sfx' ? 'sfx' : 'music',
+      durationSec: duration,
+      voiceId: voice,
+      output,
       db,
       runId,
       scenarioId,

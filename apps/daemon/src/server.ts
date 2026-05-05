@@ -18,6 +18,8 @@ import {
   sanitizeCustomModel,
 } from './agents.js';
 import { listSkills } from './skills.js';
+import { createScenarioRunner } from './orchestrator/runner.js';
+import { pptDesignScenario } from './scenarios/ppt-design/index.js';
 import { listCodexPets, readCodexPetSpritesheet } from './codex-pets.js';
 import { syncCommunityPets } from './community-pets-sync.js';
 import {
@@ -2510,6 +2512,61 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
     runs: createChatRunService({ createSseResponse, createSseErrorPayload }),
   };
 
+  // ── Scenario runner (Phase 2) ──────────────────────────────────────────
+  const scenarioRunner = createScenarioRunner(db);
+
+  /**
+   * Execute a DaemonScenario and map its ScenarioRunEvents to the SSE stream
+   * of the given run. Called from startChatRun when skill.scenario matches a
+   * registered technical scenario id.
+   */
+  async function runScenarioChatRun({ run, send, finish, scenario, input, projectCtx }) {
+    run.status = 'running';
+    run.updatedAt = Date.now();
+    send('start', {
+      runId: run.id,
+      agentId: null,
+      bin: null,
+      streamFormat: 'scenario',
+      projectId: projectCtx.projectId || null,
+      cwd: projectCtx.projectDir,
+    });
+    try {
+      for await (const event of scenarioRunner.run(scenario, input, projectCtx)) {
+        switch (event.type) {
+          case 'message':
+            send('text-delta', { delta: event.content + '\n' });
+            break;
+          case 'capability:start':
+            send('text-delta', { delta: `[${event.capabilityId}] starting…\n` });
+            break;
+          case 'capability:end':
+            send('text-delta', {
+              delta: event.status === 'success'
+                ? `[${event.capabilityId}] done\n`
+                : `[${event.capabilityId}] error: ${event.errorMessage ?? 'unknown'}\n`,
+            });
+            break;
+          case 'artifact':
+            send('artifact', { path: event.path, mimeType: event.mimeType });
+            break;
+          case 'error':
+            send('error', { message: event.message });
+            finish('failed', 1);
+            return;
+          case 'done':
+            finish('done', 0);
+            return;
+        }
+      }
+      finish('done', 0);
+    } catch (err) {
+      const msg = err && err.message ? err.message : String(err);
+      send('error', { message: msg });
+      finish('failed', 1);
+    }
+  }
+
   const composeDaemonSystemPrompt = async ({
     projectId,
     skillId,
@@ -2725,6 +2782,42 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
     const extraAllowedDirs = [SKILLS_DIR, DESIGN_SYSTEMS_DIR].filter((d) =>
       fs.existsSync(d),
     );
+
+    // ── Scenario routing (Phase 2) ─────────────────────────────────────────
+    // When the resolved skill declares `od.scenario: ppt-design` in its
+    // SKILL.md frontmatter, route through the capability orchestrator instead
+    // of spawning the legacy code agent. This is a no-op for all existing
+    // skills that carry the UI-category `scenario` value (general, engineering,
+    // etc.); only skills explicitly authored with the technical scenario id
+    // activate this path.
+    if (typeof skillId === 'string' && skillId && cwd) {
+      const allSkills = await listSkills(SKILLS_DIR).catch(() => []);
+      const resolvedSkill = allSkills.find((s) => s.id === skillId);
+      if (resolvedSkill?.scenario === 'ppt-design') {
+        await runScenarioChatRun({
+          run,
+          send: (event, data) => design.runs.emit(run, event, data),
+          finish: (status, code) => design.runs.finish(run, status, code, null),
+          scenario: pptDesignScenario,
+          input: {
+            runId: run.id,
+            prompt: message || '',
+            attachments: safeAttachments,
+            designSystemId: typeof designSystemId === 'string' ? designSystemId : undefined,
+            skillId,
+          },
+          projectCtx: {
+            projectRoot: ROOT_DIR,
+            projectsRoot: PROJECTS_DIR,
+            projectId: typeof projectId === 'string' ? projectId : '',
+            projectDir: cwd,
+            db,
+          },
+        });
+        return;
+      }
+    }
+
     // Per-agent model + reasoning the user picked in the model menu.
     // Trust the value when it matches the most recent /api/agents listing
     // (live or fallback). Otherwise allow it through if it passes a

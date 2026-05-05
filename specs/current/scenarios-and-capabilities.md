@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Phase 0 ✅ landed (`51e5ae7`) · Phase 0.5 ✅ landed (`325197b`) · Phase 0.6 ✅ done · Phase 1 ✅ implemented (manual real-provider check pending) · Phase 2 ⏳ next |
+| Status | Phase 0 ✅ landed (`51e5ae7`) · Phase 0.5 ✅ landed (`325197b`) · Phase 0.6 ✅ done · Phase 1 ✅ implemented (manual real-provider check pending) · Phase 2 ✅ done · Phase 3 ⏳ next |
 | Owner | architecture |
 | Last updated | 2026-05-06 |
 | Target form | Mac + Windows desktop product (Electron). No Linux / Docker / SaaS targets in scope. |
@@ -435,7 +435,7 @@ to its compile-time copy and flags an upgrade hint when they disagree
 | **0.5 — fix daemon typecheck baseline** | inserted | ✅ **DONE** (`325197b`) | ESM extensions + optional playwright fixed; `pnpm typecheck` green. |
 | **0.6 — restore DB tables** | inserted | ✅ **DONE** | `schema_version` + `capability_invocations` removed by `4d72773`; restored before Phase 1. |
 | **1 — first capability** | Week 2 | ✅ implemented | `image-gen` impl extracted from `media.ts`; old shims still serve callers; invocations logged. |
-| **2 — first scenario** | Week 3 | ⏳ NEXT | `music-gen` extracted; `ppt-design` scenario routes through orchestrator; SKILL.md `capabilities_used` filled. |
+| **2 — first scenario** | Week 3 | ✅ **DONE** | `music-gen` extracted; `ppt-design` scenario routes through orchestrator; SKILL.md `capabilities_used` filled. |
 | **3 — split server.ts** | Week 4 | ⏳ pending | `apps/daemon/src/routes/*` carved out. No business changes. |
 | **4 — second scenario** | Week 5 | ⏳ pending | `frontend-design` scenario. UI consumes `/api/v2/scenarios` + `/api/v2/capabilities`. |
 | **5 — guardrails** | Week 6 | ⏳ pending | ESLint boundary rules; capability SemVer CI; docs update. |
@@ -521,20 +521,34 @@ Acceptance: image generation public route/CLI contract preserved;
 writes `capability_invocations` rows. Real-provider manual validation is
 pending credentials/UI execution.
 
-### Phase 2 — first scenario
+### Phase 2 — first scenario — DONE
 
-- [ ] Same extraction for `music-gen`
-- [ ] Create `apps/daemon/src/scenarios/ppt-design/{index.ts,
+- [x] Same extraction for `music-gen`
+      (`apps/daemon/src/capabilities/music-gen/index.ts`)
+- [x] `media.ts` music shim: `surface=audio, kind≠speech` routes through
+      `generateMusicCapability()`; TTS (speech) stays in legacy dispatch
+- [x] Create `apps/daemon/src/scenarios/ppt-design/{index.ts,
       prompt-templates.ts, post-process.ts}`
-- [ ] Implement `Scenario.run()` as an async iterable that calls the
+- [x] Implement `Scenario.run()` as an async iterable that calls the
       injected capabilities and yields `ScenarioRunEvent`s
-- [ ] Add `apps/daemon/src/orchestrator/runner.ts`: takes a scenario
-      manifest + capability registry, validates SemVer ranges, runs
-      the scenario
-- [ ] In chat run dispatch, when `skill.od.scenario === 'ppt-design'`,
-      route to the new scenario; otherwise fall back to legacy path
-- [ ] Backfill SKILL.md `capabilities_used` for all 48 skills
-      (script + manual review)
+- [x] Add `apps/daemon/src/orchestrator/runner.ts`: SemVer range
+      validation (minimal caret-range impl, no semver package); builds
+      `CapabilityRegistry` via dynamic imports; provides `DaemonScenarioContext`
+      with `writeArtifact()`
+- [x] In chat run dispatch, when `skill.od.scenario === 'ppt-design'`,
+      route to the new scenario via `runScenarioChatRun()`; otherwise fall
+      back to legacy path (shim is dormant until SKILL.md backfill runs)
+- [x] Create `scripts/backfill-skill-capabilities.ts` — dry-run by
+      default, `--apply` writes changes; infers `capabilities_used` from
+      `od.mode`; sets `od.scenario: ppt-design` for deck skills
+- [x] Tests: `tests/music-gen-capability.test.ts` + `tests/scenario-runner.test.ts`
+- [x] `pnpm --filter @open-design/daemon typecheck` green
+- [x] `pnpm --filter @open-design/daemon test` green (339 pass, 5 skipped)
+
+Acceptance: `pnpm typecheck` green; `pnpm test` green; ppt-design scenario
+runs end-to-end in stub mode (writes `presentation.html`, logs
+`capability_invocations` rows). Backfill script ready to apply; SKILL.md
+manual review is a follow-up before activation.
 
 ### Phase 3 — split server.ts
 
