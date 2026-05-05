@@ -3,6 +3,14 @@ import type { SseTransportEvent } from './common';
 
 export const CHAT_SSE_PROTOCOL_VERSION = 1;
 
+export type ViewportSize = 'desktop' | 'tablet' | 'mobile';
+
+export interface ViewportDimension {
+  width: number;
+  height: number;
+  label: ViewportSize;
+}
+
 export interface ChatSseStartPayload {
   runId?: string;
   agentId?: string;
@@ -33,7 +41,10 @@ export type DaemonAgentPayload =
   | { type: 'tool_use'; id: string; name: string; input: unknown }
   | { type: 'tool_result'; toolUseId: string; content: string; isError?: boolean }
   | { type: 'usage'; usage?: { input_tokens?: number; output_tokens?: number }; costUsd?: number; durationMs?: number }
-  | { type: 'raw'; line: string };
+  | { type: 'raw'; line: string }
+  | { type: 'file_changed'; path: string; changeKind: 'create' | 'modify' | 'delete'; size?: number }
+  | { type: 'screenshot'; viewport: ViewportSize; imageUrl: string; timestamp: number; label?: string }
+  | { type: 'screenshot_error'; viewport: ViewportSize; error: string };
 
 export type ChatSseEvent =
   | SseTransportEvent<'start', ChatSseStartPayload>

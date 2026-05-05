@@ -80,7 +80,9 @@ export type PersistedAgentEvent =
   | { kind: 'tool_use'; id: string; name: string; input: unknown }
   | { kind: 'tool_result'; toolUseId: string; content: string; isError: boolean }
   | { kind: 'usage'; inputTokens?: number; outputTokens?: number; costUsd?: number; durationMs?: number }
-  | { kind: 'raw'; line: string };
+  | { kind: 'raw'; line: string }
+  | { kind: 'file_changed'; path: string; changeKind: 'create' | 'modify' | 'delete'; size?: number }
+  | { kind: 'screenshot'; viewport: string; imageUrl: string; timestamp: number; label?: string };
 
 export interface ChatMessage {
   id: string;

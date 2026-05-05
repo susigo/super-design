@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { MarkdownRenderer, artifactRendererRegistry } from '../artifacts/renderer-registry';
 import { renderMarkdownToSafeHtml } from '../artifacts/markdown';
+import { ViewportSwitcher, VIEWPORT_CONFIGS, type ViewportSize } from './ViewportSwitcher';
 import { useT } from '../i18n';
 import type { Dict } from '../i18n/types';
 import {
@@ -622,6 +623,7 @@ function HtmlViewer({
   const [reloadKey, setReloadKey] = useState(0);
   const [commentMode, setCommentMode] = useState(false);
   const [imagePanelOpen, setImagePanelOpen] = useState(false);
+  const [viewport, setViewport] = useState<ViewportSize>('desktop');
   const [activeCommentTarget, setActiveCommentTarget] = useState<PreviewCommentSnapshot | null>(null);
   const [hoveredCommentTarget, setHoveredCommentTarget] = useState<PreviewCommentSnapshot | null>(null);
   const [liveCommentTargets, setLiveCommentTargets] = useState<Map<string, PreviewCommentSnapshot>>(() => new Map());
@@ -1070,6 +1072,7 @@ function HtmlViewer({
   const exportTitle = file.name.replace(/\.html?$/i, '') || file.name;
   const canPptx = canShare && Boolean(onExportAsPptx) && !streaming;
   const previewScale = zoom / 100;
+  const viewportWidth = VIEWPORT_CONFIGS.find((v) => v.label === viewport)?.width ?? 1280;
   const activeDeployment = deployResult || deployment;
   const activeDeployedUrl = activeDeployment?.url?.trim() || '';
   const activeDeploymentReady = activeDeployment?.status === 'ready';
@@ -1093,6 +1096,11 @@ function HtmlViewer({
           >
             <Icon name="reload" size={14} />
           </button>
+          <ViewportSwitcher
+            active={viewport}
+            onChange={setViewport}
+            streaming={streaming}
+          />
           {effectiveDeck ? (
             <span
               className="deck-nav"
@@ -1428,11 +1436,14 @@ function HtmlViewer({
         ) : mode === 'preview' ? (
           <div className="comment-preview-layer">
             <div
+              className={viewport !== 'desktop' ? 'viewport-constrained' : ''}
               style={{
                 width: `${100 / previewScale}%`,
+                maxWidth: viewport !== 'desktop' ? `${viewportWidth}px` : undefined,
                 height: `${100 / previewScale}%`,
                 transform: `scale(${previewScale})`,
                 transformOrigin: '0 0',
+                margin: viewport !== 'desktop' ? '0 auto' : undefined,
               }}
             >
               <iframe

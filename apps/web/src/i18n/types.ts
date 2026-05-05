@@ -659,6 +659,23 @@ export interface Dict {
   'tool.running': string;
   'tool.error': string;
   'tool.done': string;
+  'tool.writing': string;
+  'tool.editing': string;
+  'tool.source': string;
+  'tool.diff': string;
+
+  // File activity
+  'fileActivity.title': string;
+  'fileActivity.created': string;
+  'fileActivity.modified': string;
+  'fileActivity.deleted': string;
+
+  // Screenshots
+  'screenshots.title': string;
+  'screenshots.capture': string;
+  'screenshots.desktop': string;
+  'screenshots.tablet': string;
+  'screenshots.mobile': string;
 
   // Assistant message scaffolding
   'assistant.role': string;

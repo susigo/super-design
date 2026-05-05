@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useT } from '../i18n';
+import { ViewportSwitcher, VIEWPORT_CONFIGS, type ViewportSize } from './ViewportSwitcher';
 import { exportAsHtml, exportAsPdf, exportAsZip } from '../runtime/exports';
 import { buildSrcdoc } from '../runtime/srcdoc';
 
@@ -88,6 +89,7 @@ export function PreviewModal({
     w: 0,
     h: 0,
   });
+  const [viewport, setViewport] = useState<ViewportSize>('desktop');
   // Capture the toggle handler in a ref so the lazy-load effect below
   // depends only on sidebarOpen — without this, a new `sidebar` object on
   // every parent render would re-fire the load on each render.
@@ -205,7 +207,10 @@ export function PreviewModal({
 
   // Only down-scale: when the stage is wider than the design viewport we
   // render the iframe at native size instead of upscaling pixels.
-  const scale = stageSize.w > 0 ? Math.min(1, stageSize.w / designWidth) : 1;
+  const effectiveDesignWidth = viewport !== 'desktop'
+    ? (VIEWPORT_CONFIGS.find((v) => v.label === viewport)?.width ?? designWidth)
+    : designWidth;
+  const scale = stageSize.w > 0 ? Math.min(1, stageSize.w / effectiveDesignWidth) : 1;
   const scalerStyle = useMemo(() => {
     if (scale >= 1 || stageSize.w === 0) {
       return {
@@ -215,11 +220,11 @@ export function PreviewModal({
       } as const;
     }
     return {
-      width: designWidth,
+      width: effectiveDesignWidth,
       height: stageSize.h / scale,
       transform: `scale(${scale})`,
     } as const;
-  }, [scale, stageSize.w, stageSize.h, designWidth]);
+  }, [scale, stageSize.w, stageSize.h, effectiveDesignWidth]);
 
   function openInNewTab() {
     if (!activeHtml) return;
@@ -275,6 +280,7 @@ export function PreviewModal({
             <span aria-hidden="true" />
           )}
           <div className="ds-modal-actions">
+            <ViewportSwitcher active={viewport} onChange={setViewport} />
             {sidebar ? (
               <button
                 className={`ghost ${sidebarOpen ? 'is-active' : ''}`}

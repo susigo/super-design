@@ -391,6 +391,12 @@ function translateAgentEvent(data: DaemonAgentPayload): AgentEvent | null {
   if (t === 'raw' && typeof data.line === 'string') {
     return { kind: 'raw', line: data.line };
   }
+  if (t === 'file_changed' && typeof data.path === 'string') {
+    return { kind: 'file_changed', path: data.path, changeKind: data.changeKind, size: data.size };
+  }
+  if (t === 'screenshot' && typeof data.imageUrl === 'string') {
+    return { kind: 'screenshot', viewport: data.viewport, imageUrl: data.imageUrl, timestamp: data.timestamp, label: data.label };
+  }
   return null;
 }
 

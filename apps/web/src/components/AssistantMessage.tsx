@@ -1,5 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { ToolCard } from './ToolCard';
+import { FileActivityPanel } from './FileActivityPanel';
+import { ScreenshotStrip } from './ScreenshotStrip';
 import { renderMarkdown } from '../runtime/markdown';
 import { projectFileUrl } from '../providers/registry';
 import { splitOnQuestionForms, type QuestionForm } from '../artifacts/question-form';
@@ -111,6 +113,8 @@ export function AssistantMessage({
               />
             );
           }
+          if (b.kind === 'file-activity') return <FileActivityPanel key={i} events={b.events} />;
+          if (b.kind === 'screenshots') return <ScreenshotStrip key={i} items={b.items} />;
           if (b.kind === 'status') return <StatusPill key={i} label={b.label} detail={b.detail} />;
           return null;
         })}
@@ -660,11 +664,16 @@ function lastStateLabel(
   return verbs[verbs.length - 1] ?? '';
 }
 
+type FileChangedEvent = Extract<AgentEvent, { kind: 'file_changed' }>;
+type ScreenshotEvent = Extract<AgentEvent, { kind: 'screenshot' }>;
+
 type Block =
   | { kind: 'text'; text: string }
   | { kind: 'thinking'; text: string }
   | { kind: 'tool-group'; items: ToolItem[] }
-  | { kind: 'status'; label: string; detail?: string | undefined };
+  | { kind: 'status'; label: string; detail?: string | undefined }
+  | { kind: 'file-activity'; events: FileChangedEvent[] }
+  | { kind: 'screenshots'; items: ScreenshotEvent[] };
 
 /**
  * Walk the event stream and build the rendering layout list. We additionally
@@ -708,6 +717,24 @@ function buildBlocks(events: AgentEvent[]): Block[] {
       continue;
     }
     if (ev.kind === 'tool_result') continue;
+    if (ev.kind === 'file_changed') {
+      const last = out[out.length - 1];
+      if (last && last.kind === 'file-activity') {
+        last.events.push(ev as FileChangedEvent);
+      } else {
+        out.push({ kind: 'file-activity', events: [ev as FileChangedEvent] });
+      }
+      continue;
+    }
+    if (ev.kind === 'screenshot') {
+      const last = out[out.length - 1];
+      if (last && last.kind === 'screenshots') {
+        last.items.push(ev as ScreenshotEvent);
+      } else {
+        out.push({ kind: 'screenshots', items: [ev as ScreenshotEvent] });
+      }
+      continue;
+    }
     if (ev.kind === 'status') {
       if (ev.label === 'streaming' || ev.label === 'starting' || ev.label === 'requesting' || ev.label === 'thinking') continue;
       const last = out[out.length - 1];

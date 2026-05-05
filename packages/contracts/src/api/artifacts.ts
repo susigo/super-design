@@ -46,6 +46,24 @@ export interface ArtifactManifest {
   metadata?: Record<string, JsonValue | undefined>;
 }
 
+export type ScreenshotViewport = 'desktop' | 'tablet' | 'mobile';
+
+export interface ScreenshotEntry {
+  viewport: ScreenshotViewport;
+  width: number;
+  height: number;
+  fileName: string;
+  timestamp: number;
+  label?: string;
+}
+
+export interface ScreenshotManifest {
+  runId?: string;
+  projectId: string;
+  screenshots: ScreenshotEntry[];
+  createdAt: number;
+}
+
 export interface SaveArtifactRequest {
   identifier: string;
   title: string;

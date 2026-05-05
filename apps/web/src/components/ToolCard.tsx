@@ -134,21 +134,32 @@ function FileWriteCard({
   ctx: FileToolCtx;
 }) {
   const t = useT();
+  const [open, setOpen] = useState(false);
   const obj = (input ?? {}) as { file_path?: string; path?: string; content?: string };
   const file = obj.file_path ?? obj.path ?? '(unnamed)';
-  const lines = typeof obj.content === 'string' ? obj.content.split('\n').length : null;
+  const content = typeof obj.content === 'string' ? obj.content : null;
+  const lines = content ? content.split('\n').length : null;
+  const sizeKb = content ? Math.round(new Blob([content]).size / 1024) : null;
   return (
     <div className="op-card op-file">
       <div className="op-card-head">
-        <span className="op-icon op-icon-write" aria-hidden>+</span>
-        <span className="op-title">{t('tool.write')}</span>
+        <span className={`op-icon op-icon-write ${!result ? 'op-icon-pulse' : ''}`} aria-hidden>+</span>
+        <span className="op-title">{!result ? t('tool.writing') : t('tool.write')}</span>
         <code className="op-path">{file}</code>
         {lines !== null ? (
-          <span className="op-meta">{t('tool.lines', { n: lines })}</span>
+          <span className="op-meta">{t('tool.lines', { n: lines })}{sizeKb !== null ? ` (${sizeKb}KB)` : ''}</span>
         ) : null}
         <ResultBadge result={result} />
         <OpenInTabButton filePath={file} ctx={ctx} />
+        {content ? (
+          <button className="op-toggle" onClick={() => setOpen((o) => !o)}>
+            {open ? t('tool.hide') : t('tool.source')}
+          </button>
+        ) : null}
       </div>
+      {open && content ? (
+        <pre className="op-output op-source-preview">{truncate(content, 6000)}</pre>
+      ) : null}
     </div>
   );
 }
@@ -163,6 +174,7 @@ function FileEditCard({
   ctx: FileToolCtx;
 }) {
   const t = useT();
+  const [open, setOpen] = useState(false);
   const obj = (input ?? {}) as {
     file_path?: string;
     path?: string;
@@ -171,19 +183,47 @@ function FileEditCard({
     edits?: { old_string?: string; new_string?: string }[];
   };
   const file = obj.file_path ?? obj.path ?? '(unnamed)';
-  const editCount = Array.isArray(obj.edits) ? obj.edits.length : 1;
+  const edits = Array.isArray(obj.edits)
+    ? obj.edits
+    : [{ old_string: obj.old_string, new_string: obj.new_string }];
+  const editCount = edits.length;
+  const hasDiff = edits.some((e) => typeof e.old_string === 'string' || typeof e.new_string === 'string');
   return (
     <div className="op-card op-file">
       <div className="op-card-head">
-        <span className="op-icon op-icon-edit" aria-hidden>✎</span>
-        <span className="op-title">{t('tool.edit')}</span>
+        <span className={`op-icon op-icon-edit ${!result ? 'op-icon-pulse' : ''}`} aria-hidden>✎</span>
+        <span className="op-title">{!result ? t('tool.editing') : t('tool.edit')}</span>
         <code className="op-path">{file}</code>
         <span className="op-meta">
           {editCount} {editCount === 1 ? t('tool.changeSingular') : t('tool.changePlural')}
         </span>
         <ResultBadge result={result} />
         <OpenInTabButton filePath={file} ctx={ctx} />
+        {hasDiff ? (
+          <button className="op-toggle" onClick={() => setOpen((o) => !o)}>
+            {open ? t('tool.hide') : t('tool.diff')}
+          </button>
+        ) : null}
       </div>
+      {open ? (
+        <div className="op-diff-panel">
+          {edits.map((edit, i) => (
+            <InlineDiff key={i} oldStr={edit.old_string} newStr={edit.new_string} />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function InlineDiff({ oldStr, newStr }: { oldStr?: string; newStr?: string }) {
+  const old = typeof oldStr === 'string' ? oldStr : '';
+  const nw = typeof newStr === 'string' ? newStr : '';
+  if (!old && !nw) return null;
+  return (
+    <div className="op-inline-diff">
+      {old ? <pre className="op-diff-old">{truncate(old, 2000)}</pre> : null}
+      {nw ? <pre className="op-diff-new">{truncate(nw, 2000)}</pre> : null}
     </div>
   );
 }
