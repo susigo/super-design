@@ -37,6 +37,14 @@ export function closeDatabase() {
 
 function migrate(db) {
   db.exec(`
+    CREATE TABLE IF NOT EXISTS schema_version (
+      version INTEGER PRIMARY KEY,
+      applied_at INTEGER NOT NULL
+    );
+
+    INSERT OR IGNORE INTO schema_version (version, applied_at)
+    VALUES (1, CAST(strftime('%s', 'now') AS INTEGER) * 1000);
+
     CREATE TABLE IF NOT EXISTS projects (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -175,6 +183,27 @@ function migrate(db) {
       ON usage_logs(surface, ts DESC);
     CREATE INDEX IF NOT EXISTS idx_usage_provider_model
       ON usage_logs(provider, model, ts DESC);
+
+    CREATE TABLE IF NOT EXISTS capability_invocations (
+      id TEXT PRIMARY KEY,
+      run_id TEXT NOT NULL,
+      scenario_id TEXT NOT NULL,
+      capability_id TEXT NOT NULL,
+      provider TEXT,
+      input_hash TEXT,
+      cost_units REAL,
+      cost_usd REAL,
+      duration_ms INTEGER,
+      status TEXT NOT NULL,
+      error_message TEXT,
+      cached INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_capinv_run
+      ON capability_invocations(run_id);
+    CREATE INDEX IF NOT EXISTS idx_capinv_scenario
+      ON capability_invocations(scenario_id, created_at DESC);
   `);
   // Forward-compatible column add for databases created before metadata_json.
   // SQLite has no IF NOT EXISTS for ALTER, so we check pragma_table_info.
@@ -211,6 +240,146 @@ function migrate(db) {
   if (!deploymentCols.some((c) => c.name === 'reachable_at')) {
     db.exec(`ALTER TABLE deployments ADD COLUMN reachable_at INTEGER`);
   }
+}
+
+// ---------- capability invocations ----------
+
+const CAPABILITY_INVOCATION_COLS = `id, run_id AS runId, scenario_id AS scenarioId,
+  capability_id AS capabilityId, provider, input_hash AS inputHash,
+  cost_units AS costUnits, cost_usd AS costUsd, duration_ms AS durationMs,
+  status, error_message AS errorMessage, cached, created_at AS createdAt`;
+
+export function insertCapabilityInvocation(db, invocation) {
+  const row = {
+    id: invocation.id,
+    runId: invocation.runId,
+    scenarioId: invocation.scenarioId,
+    capabilityId: invocation.capabilityId,
+    provider: invocation.provider ?? null,
+    inputHash: invocation.inputHash ?? null,
+    costUnits: invocation.costUnits ?? null,
+    costUsd: invocation.costUsd ?? null,
+    durationMs: invocation.durationMs ?? null,
+    status: invocation.status,
+    errorMessage: invocation.errorMessage ?? null,
+    cached: invocation.cached ? 1 : 0,
+    createdAt: invocation.createdAt ?? Date.now(),
+  };
+  db.prepare(
+    `INSERT INTO capability_invocations
+       (id, run_id, scenario_id, capability_id, provider, input_hash,
+        cost_units, cost_usd, duration_ms, status, error_message, cached,
+        created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    row.id,
+    row.runId,
+    row.scenarioId,
+    row.capabilityId,
+    row.provider,
+    row.inputHash,
+    row.costUnits,
+    row.costUsd,
+    row.durationMs,
+    row.status,
+    row.errorMessage,
+    row.cached,
+    row.createdAt,
+  );
+  return getCapabilityInvocation(db, row.id);
+}
+
+export function updateCapabilityInvocation(db, id, patch) {
+  const existing = getCapabilityInvocation(db, id);
+  if (!existing) return null;
+  const next = {
+    provider: patch.provider ?? existing.provider ?? null,
+    inputHash: patch.inputHash ?? existing.inputHash ?? null,
+    costUnits: patch.costUnits ?? existing.costUnits ?? null,
+    costUsd: patch.costUsd ?? existing.costUsd ?? null,
+    durationMs: patch.durationMs ?? existing.durationMs ?? null,
+    status: patch.status ?? existing.status,
+    errorMessage: patch.errorMessage ?? existing.errorMessage ?? null,
+    cached:
+      typeof patch.cached === 'boolean'
+        ? patch.cached
+        : Boolean(existing.cached),
+  };
+  db.prepare(
+    `UPDATE capability_invocations
+        SET provider = ?,
+            input_hash = ?,
+            cost_units = ?,
+            cost_usd = ?,
+            duration_ms = ?,
+            status = ?,
+            error_message = ?,
+            cached = ?
+      WHERE id = ?`,
+  ).run(
+    next.provider,
+    next.inputHash,
+    next.costUnits,
+    next.costUsd,
+    next.durationMs,
+    next.status,
+    next.errorMessage,
+    next.cached ? 1 : 0,
+    id,
+  );
+  return getCapabilityInvocation(db, id);
+}
+
+export function getCapabilityInvocation(db, id) {
+  const row = db
+    .prepare(`SELECT ${CAPABILITY_INVOCATION_COLS} FROM capability_invocations WHERE id = ?`)
+    .get(id);
+  return row ? normalizeCapabilityInvocation(row) : null;
+}
+
+export function listCapabilityInvocations(db, filters = {}) {
+  const clauses = [];
+  const params = [];
+  if (filters.runId) {
+    clauses.push('run_id = ?');
+    params.push(filters.runId);
+  }
+  if (filters.scenarioId) {
+    clauses.push('scenario_id = ?');
+    params.push(filters.scenarioId);
+  }
+  if (filters.capabilityId) {
+    clauses.push('capability_id = ?');
+    params.push(filters.capabilityId);
+  }
+  const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+  return db
+    .prepare(
+      `SELECT ${CAPABILITY_INVOCATION_COLS}
+         FROM capability_invocations
+         ${where}
+        ORDER BY created_at DESC`,
+    )
+    .all(...params)
+    .map(normalizeCapabilityInvocation);
+}
+
+function normalizeCapabilityInvocation(row) {
+  return {
+    id: row.id,
+    runId: row.runId,
+    scenarioId: row.scenarioId,
+    capabilityId: row.capabilityId,
+    provider: row.provider ?? undefined,
+    inputHash: row.inputHash ?? undefined,
+    costUnits: row.costUnits == null ? undefined : Number(row.costUnits),
+    costUsd: row.costUsd == null ? undefined : Number(row.costUsd),
+    durationMs: row.durationMs == null ? undefined : Number(row.durationMs),
+    status: row.status,
+    errorMessage: row.errorMessage ?? undefined,
+    cached: Boolean(row.cached),
+    createdAt: Number(row.createdAt),
+  };
 }
 
 // ---------- deployments ----------

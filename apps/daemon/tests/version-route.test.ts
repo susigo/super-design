@@ -1,5 +1,6 @@
 import type http from 'node:http';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { PROTOCOL_VERSION } from '@open-design/contracts';
 import { startServer } from '../src/server.js';
 
 describe('/api/version', () => {
@@ -30,6 +31,7 @@ describe('/api/version', () => {
         platform: expect.any(String),
         arch: expect.any(String),
       },
+      protocolVersion: PROTOCOL_VERSION,
     });
   });
 

@@ -12,10 +12,14 @@ const OPENAI_ENV_KEYS = [
   'AZURE_OPENAI_API_KEY',
 ];
 
+const HOME_ENV_KEYS = ['HOME', 'USERPROFILE', 'HOMEDRIVE', 'HOMEPATH'];
+
 describe('media-config OpenAI OAuth fallback', () => {
   let homeDir: string;
   let projectRoot: string;
-  const originalHome = process.env.HOME;
+  const originalHomeEnv = Object.fromEntries(
+    HOME_ENV_KEYS.map((key) => [key, process.env[key]]),
+  );
   const originalEnv = Object.fromEntries(
     OPENAI_ENV_KEYS.map((key) => [key, process.env[key]]),
   );
@@ -24,16 +28,21 @@ describe('media-config OpenAI OAuth fallback', () => {
     homeDir = await mkdtemp(path.join(tmpdir(), 'od-media-home-'));
     projectRoot = await mkdtemp(path.join(tmpdir(), 'od-media-project-'));
     process.env.HOME = homeDir;
+    process.env.USERPROFILE = homeDir;
+    delete process.env.HOMEDRIVE;
+    delete process.env.HOMEPATH;
     for (const key of OPENAI_ENV_KEYS) {
       delete process.env[key];
     }
   });
 
   afterEach(async () => {
-    if (originalHome == null) {
-      delete process.env.HOME;
-    } else {
-      process.env.HOME = originalHome;
+    for (const key of HOME_ENV_KEYS) {
+      if (originalHomeEnv[key] == null) {
+        delete process.env[key];
+      } else {
+        process.env[key] = originalHomeEnv[key];
+      }
     }
     for (const key of OPENAI_ENV_KEYS) {
       if (originalEnv[key] == null) {

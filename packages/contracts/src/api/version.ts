@@ -8,4 +8,5 @@ export interface AppVersionInfo {
 
 export interface AppVersionResponse {
   version: AppVersionInfo;
+  protocolVersion: import('../protocol.js').ProtocolVersion;
 }

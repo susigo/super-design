@@ -50,6 +50,8 @@ import {
   modelsForSurface,
 } from './media-models.js';
 import { resolveProviderConfig } from './media-config.js';
+import { generateImageCapability } from './capabilities/image-gen/index.js';
+import { StubProviderDisabledError } from './capabilities/media-utils.js';
 import {
   ensureProject,
   kindFor,
@@ -74,7 +76,7 @@ const AUDIO_KINDS = new Set(['music', 'speech', 'sfx']);
 // empty bytes — confusing to users. We therefore gate the stub renderers
 // behind OD_MEDIA_ALLOW_STUBS=1 and otherwise return a 503 (mapped from
 // the StubProviderDisabledError thrown below) with a clear message.
-class StubProviderDisabledError extends Error {
+class LegacyStubProviderDisabledError extends Error {
   constructor(model) {
     super(
       `provider not configured: ${model}. Add your API key in Settings -> Media Providers to enable real generation.`,
@@ -223,7 +225,26 @@ export async function generateMedia(args) {
     audioKind,
     compositionDir,
     image,
+    db,
+    runId,
+    scenarioId,
   } = args;
+
+  if (surface === 'image') {
+    return generateImageCapability({
+      projectRoot,
+      projectsRoot,
+      projectId,
+      model,
+      prompt,
+      output,
+      aspect,
+      image,
+      db,
+      runId,
+      scenarioId,
+    });
+  }
 
   if (!projectRoot) throw new Error('projectRoot required');
   if (!projectsRoot) throw new Error('projectsRoot required');

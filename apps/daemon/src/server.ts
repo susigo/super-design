@@ -8,6 +8,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
 import { composeSystemPrompt } from './prompts/system.js';
+import { PROTOCOL_VERSION } from '@open-design/contracts';
 import { createCommandInvocation } from '@open-design/platform';
 import {
   detectAgents,
@@ -39,7 +40,8 @@ import { listPromptTemplates, readPromptTemplate } from './prompt-templates.js';
 import { buildDocumentPreview } from './document-preview.js';
 import { lintArtifact, renderFindingsForAgent } from './lint-artifact.js';
 import { loadCraftSections } from './craft.js';
-import { generateMedia, openaiSizeFor } from './media.js';
+import { generateMedia } from './media.js';
+import { openaiSizeFor } from './capabilities/image-gen/index.js';
 import {
   AUDIO_DURATIONS_SEC,
   AUDIO_MODELS_BY_KIND,
@@ -665,7 +667,7 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
 
   app.get('/api/version', async (_req, res) => {
     const version = await readCurrentAppVersionInfo();
-    res.json({ version });
+    res.json({ version, protocolVersion: PROTOCOL_VERSION });
   });
 
   // ---- Projects (DB-backed) -------------------------------------------------
@@ -2176,6 +2178,12 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
         audioKind: req.body?.audioKind,
         compositionDir: req.body?.compositionDir,
         image: req.body?.image,
+        db,
+        runId: taskId,
+        scenarioId:
+          typeof req.body?.scenarioId === 'string'
+            ? req.body.scenarioId
+            : 'legacy-media',
         onProgress: (line) => appendTaskProgress(task, line),
       })
         .then((meta) => {

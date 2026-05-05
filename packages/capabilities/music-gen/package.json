@@ -3,7 +3,7 @@
   "version": "0.3.0",
   "private": true,
   "type": "module",
-  "description": "Contract for the music-gen capability (music, beds, voiceover, SFX).",
+  "description": "Pure TypeScript contracts for Open Design music generation capability.",
   "exports": {
     ".": {
       "types": "./src/index.ts",

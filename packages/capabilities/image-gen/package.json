@@ -3,7 +3,7 @@
   "version": "0.3.0",
   "private": true,
   "type": "module",
-  "description": "Contract for the image-gen capability (text-to-image, reference-guided image, design-system-aware).",
+  "description": "Pure TypeScript contracts for Open Design image generation capability.",
   "exports": {
     ".": {
       "types": "./src/index.ts",

@@ -3,7 +3,7 @@
   "version": "0.3.0",
   "private": true,
   "type": "module",
-  "description": "Core types for Open Design scenario packages (frontend-design, ppt-design, ...). Pure TypeScript contracts.",
+  "description": "Pure TypeScript core contracts for Open Design scenarios.",
   "exports": {
     ".": {
       "types": "./src/index.ts",

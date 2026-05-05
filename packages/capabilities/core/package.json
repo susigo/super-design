@@ -3,7 +3,7 @@
   "version": "0.3.0",
   "private": true,
   "type": "module",
-  "description": "Core types for Open Design capabilities (image-gen, music-gen, ...). Pure TypeScript contracts.",
+  "description": "Pure TypeScript core contracts for Open Design capabilities.",
   "exports": {
     ".": {
       "types": "./src/index.ts",

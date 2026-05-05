@@ -3,7 +3,7 @@
   "version": "0.3.0",
   "private": true,
   "type": "module",
-  "description": "Manifest and types for the ppt-design scenario package.",
+  "description": "Pure TypeScript manifest for the Open Design PPT design scenario.",
   "exports": {
     ".": {
       "types": "./src/index.ts",
