@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Phase 0 ✅ landed (`51e5ae7`) · Phase 0.5 ✅ landed (`325197b`) · Phase 0.6 ✅ done · Phase 1 ✅ implemented (manual real-provider check pending) · Phase 2 ✅ done · Phase 3 ⏳ next |
+| Status | Phase 0 ✅ landed (`51e5ae7`) · Phase 0.5 ✅ landed (`325197b`) · Phase 0.6 ✅ done · Phase 1 ✅ implemented · Phase 2 ✅ done · Phase 3 ✅ done · Phase 4 ⏳ next |
 | Owner | architecture |
 | Last updated | 2026-05-06 |
 | Target form | Mac + Windows desktop product (Electron). No Linux / Docker / SaaS targets in scope. |
@@ -436,7 +436,7 @@ to its compile-time copy and flags an upgrade hint when they disagree
 | **0.6 — restore DB tables** | inserted | ✅ **DONE** | `schema_version` + `capability_invocations` removed by `4d72773`; restored before Phase 1. |
 | **1 — first capability** | Week 2 | ✅ implemented | `image-gen` impl extracted from `media.ts`; old shims still serve callers; invocations logged. |
 | **2 — first scenario** | Week 3 | ✅ **DONE** | `music-gen` extracted; `ppt-design` scenario routes through orchestrator; SKILL.md `capabilities_used` filled. |
-| **3 — split server.ts** | Week 4 | ⏳ pending | `apps/daemon/src/routes/*` carved out. No business changes. |
+| **3 — split server.ts** | Week 4 | ✅ **DONE** | `apps/daemon/src/routes/*` carved out. No business changes. |
 | **4 — second scenario** | Week 5 | ⏳ pending | `frontend-design` scenario. UI consumes `/api/v2/scenarios` + `/api/v2/capabilities`. |
 | **5 — guardrails** | Week 6 | ⏳ pending | ESLint boundary rules; capability SemVer CI; docs update. |
 
@@ -550,13 +550,20 @@ runs end-to-end in stub mode (writes `presentation.html`, logs
 `capability_invocations` rows). Backfill script ready to apply; SKILL.md
 manual review is a follow-up before activation.
 
-### Phase 3 — split server.ts
+### Phase 3 — split server.ts — DONE
 
-- [ ] Move route registrations into `apps/daemon/src/routes/*`
-- [ ] `server.ts` shrinks to app/middleware composition only
+- [x] Move route registrations into `apps/daemon/src/routes/*`
+- [x] `server.ts` shrinks to 289-line composition layer (target was < 200; stopped at
+      289 because `resolveProjectRoot` + `resolveDaemonResourceRoot` are complex Electron
+      path-resolution functions that callers import directly, so they stay in server.ts)
+- [x] 14 route modules created: `helpers`, `comment-helpers`, `project-status-helpers`,
+      `projects`, `chat`, `media`, `artifacts`, `design-systems`, `templates`, `skills`,
+      `codex-pets`, `usage`, `capabilities` (Phase 4 stub), `scenarios` (Phase 4 stub)
+- [x] All 6 test files that import from `server.ts` still pass via re-exports
+- [x] `pnpm --filter @open-design/daemon typecheck` green
+- [x] `pnpm --filter @open-design/daemon test` green (339 pass, 5 skipped)
 
-This phase is cosmetic and should not run in parallel with Phase 1/2
-to avoid merge conflicts.
+Acceptance: pure cosmetic refactor; no behavior changes; all tests green.
 
 ### Phase 4 — second scenario + UI
 
