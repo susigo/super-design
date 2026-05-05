@@ -33,11 +33,20 @@ let idleTimer: NodeJS.Timeout | null = null;
 
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000;
 
+// `playwright` is an optional runtime dependency: the screenshot
+// service is best-effort and gracefully degrades when it is not
+// installed. The string indirection prevents TS from resolving the
+// module at compile time, so the typecheck passes without requiring
+// playwright in package.json.
+const PLAYWRIGHT_MODULE = 'playwright';
+
 async function launchBrowser(): Promise<BrowserLike | null> {
   try {
-    const pw = await import('playwright');
+    const pw = (await import(PLAYWRIGHT_MODULE)) as {
+      chromium: { launch(opts: { headless: boolean }): Promise<unknown> };
+    };
     const browser = await pw.chromium.launch({ headless: true });
-    return browser as unknown as BrowserLike;
+    return browser as BrowserLike;
   } catch {
     return null;
   }
@@ -69,7 +78,7 @@ function resetIdleTimer(): void {
 
 export async function initScreenshotService(): Promise<boolean> {
   try {
-    await import('playwright');
+    await import(PLAYWRIGHT_MODULE);
     playwrightAvailable = true;
   } catch {
     playwrightAvailable = false;
