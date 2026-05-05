@@ -193,6 +193,32 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@20.19.39)(jsdom@29.1.0)
 
+  packages/capabilities/core:
+    devDependencies:
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+
+  packages/capabilities/image-gen:
+    dependencies:
+      '@open-design/capabilities-core':
+        specifier: workspace:0.3.0
+        version: link:../core
+    devDependencies:
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+
+  packages/capabilities/music-gen:
+    dependencies:
+      '@open-design/capabilities-core':
+        specifier: workspace:0.3.0
+        version: link:../core
+    devDependencies:
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+
   packages/contracts:
     devDependencies:
       typescript:
@@ -213,6 +239,36 @@ importers:
       vitest:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@24.12.2)(jsdom@29.1.0)
+
+  packages/scenarios/core:
+    dependencies:
+      '@open-design/capabilities-core':
+        specifier: workspace:0.3.0
+        version: link:../../capabilities/core
+    devDependencies:
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+
+  packages/scenarios/frontend-design:
+    dependencies:
+      '@open-design/scenarios-core':
+        specifier: workspace:0.3.0
+        version: link:../core
+    devDependencies:
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+
+  packages/scenarios/ppt-design:
+    dependencies:
+      '@open-design/scenarios-core':
+        specifier: workspace:0.3.0
+        version: link:../core
+    devDependencies:
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
 
   packages/sidecar:
     devDependencies:

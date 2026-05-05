@@ -1,5 +1,7 @@
 packages:
   - packages/*
+  - packages/capabilities/*
+  - packages/scenarios/*
   - apps/*
   - tools/*
   - e2e

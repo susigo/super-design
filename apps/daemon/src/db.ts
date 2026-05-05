@@ -175,7 +175,48 @@ function migrate(db) {
       ON usage_logs(surface, ts DESC);
     CREATE INDEX IF NOT EXISTS idx_usage_provider_model
       ON usage_logs(provider, model, ts DESC);
+
+    -- Schema version table. Lets future migrations key off a single
+    -- monotonic counter instead of probing pragma_table_info every
+    -- startup. The current snapshot is recorded after the CREATE
+    -- block below, so existing databases pick up the row on first
+    -- launch of a daemon that includes this code.
+    CREATE TABLE IF NOT EXISTS schema_version (
+      version    INTEGER PRIMARY KEY,
+      applied_at INTEGER NOT NULL
+    );
+
+    -- Per-capability invocation log. One row per call to a capability
+    -- (image-gen, music-gen, ...). The single source of truth for
+    -- per-run debug traces and future per-tenant billing.
+    CREATE TABLE IF NOT EXISTS capability_invocations (
+      id            TEXT PRIMARY KEY,
+      run_id        TEXT NOT NULL,
+      scenario_id   TEXT NOT NULL,
+      capability_id TEXT NOT NULL,
+      provider      TEXT,
+      input_hash    TEXT,
+      cost_units    REAL,
+      cost_usd      REAL,
+      duration_ms   INTEGER,
+      status        TEXT NOT NULL,
+      error_message TEXT,
+      cached        INTEGER NOT NULL DEFAULT 0,
+      created_at    INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_capinv_run
+      ON capability_invocations(run_id);
+    CREATE INDEX IF NOT EXISTS idx_capinv_scenario
+      ON capability_invocations(scenario_id, created_at DESC);
   `);
+
+  // Stamp the current schema baseline so the next migration step can
+  // branch on it. Schema version 1 = "tables described above exist".
+  // We use INSERT OR IGNORE so re-runs are no-ops.
+  db.prepare(
+    `INSERT OR IGNORE INTO schema_version (version, applied_at) VALUES (?, ?)`,
+  ).run(1, Date.now());
   // Forward-compatible column add for databases created before metadata_json.
   // SQLite has no IF NOT EXISTS for ALTER, so we check pragma_table_info.
   const cols = db.prepare(`PRAGMA table_info(projects)`).all();

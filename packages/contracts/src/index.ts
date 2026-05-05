@@ -1,5 +1,6 @@
 export * from './common';
 export * from './errors';
+export * from './protocol';
 export * from './tasks';
 export * from './api/app-config';
 export * from './api/artifacts';
