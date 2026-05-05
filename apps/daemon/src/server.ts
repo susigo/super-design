@@ -39,15 +39,6 @@ import { listPromptTemplates, readPromptTemplate } from './prompt-templates.js';
 import { buildDocumentPreview } from './document-preview.js';
 import { lintArtifact, renderFindingsForAgent } from './lint-artifact.js';
 import { loadCraftSections } from './craft.js';
-import { createProjectFileWatcher } from './file-watcher.js';
-import {
-  initScreenshotService,
-  isScreenshotAvailable,
-  captureProjectScreenshots,
-  listScreenshots,
-  getScreenshotPath,
-  shutdownScreenshotService,
-} from './screenshot.js';
 import { generateMedia, openaiSizeFor } from './media.js';
 import {
   AUDIO_DURATIONS_SEC,
@@ -1985,41 +1976,6 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
     }
   });
 
-  // ── Capabilities ────────────────────────────────────────────────────
-  app.get('/api/capabilities', (_req, res) => {
-    res.json({ screenshot: isScreenshotAvailable(), fileWatch: true });
-  });
-
-  // ── Screenshot endpoints ──────────────────────────────────────────
-  app.post('/api/projects/:id/screenshots', async (req, res) => {
-    if (!isScreenshotAvailable()) {
-      return sendApiError(res, 503, 'SCREENSHOT_UNAVAILABLE', 'Playwright is not installed');
-    }
-    const projDir = projectDir(PROJECTS_DIR, req.params.id);
-    const { fileName, viewports } = req.body || {};
-    const entryFile = typeof fileName === 'string' ? fileName : 'index.html';
-    const url = `http://127.0.0.1:${resolvedPort}/api/projects/${req.params.id}/files/${entryFile}`;
-    try {
-      const shots = await captureProjectScreenshots(projDir, req.params.id, url, viewports);
-      res.json({ screenshots: shots });
-    } catch (err) {
-      sendApiError(res, 500, 'SCREENSHOT_FAILED', String(err));
-    }
-  });
-
-  app.get('/api/projects/:id/screenshots', async (req, res) => {
-    const projDir = projectDir(PROJECTS_DIR, req.params.id);
-    const shots = await listScreenshots(projDir);
-    res.json({ screenshots: shots });
-  });
-
-  app.get('/api/projects/:id/screenshots/:name', async (req, res) => {
-    const projDir = projectDir(PROJECTS_DIR, req.params.id);
-    const filePath = await getScreenshotPath(projDir, req.params.name);
-    if (!filePath) return sendApiError(res, 404, 'NOT_FOUND', 'screenshot not found');
-    res.type('image/png').sendFile(filePath);
-  });
-
   // Two ways to upload: multipart for binary files (images), and JSON
   // {name, content, encoding} for sketches and pasted text. The frontend
   // uses both depending on the file source.
@@ -2820,13 +2776,6 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
 
     if (run.cancelRequested || design.runs.isTerminal(run.status)) return;
 
-    // Attach file watcher to emit real-time file_changed events during the run.
-    const fileWatcher = cwd
-      ? createProjectFileWatcher(cwd, (change) => {
-          send('agent', { type: 'file_changed', ...change });
-        })
-      : null;
-
     run.status = 'running';
     run.updatedAt = Date.now();
     send('start', {
@@ -3020,9 +2969,7 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
       );
       design.runs.finish(run, 'failed', 1, null);
     });
-    child.on('close', async (code, signal) => {
-      fileWatcher?.stop();
-
+    child.on('close', (code, signal) => {
       if (acpSession?.hasFatalError()) {
         return design.runs.finish(run, 'failed', code ?? 1, signal ?? null);
       }
@@ -3031,25 +2978,6 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
         : code === 0
           ? 'succeeded'
           : 'failed';
-
-      // Auto-capture screenshots on successful completion if Playwright is available.
-      if (status === 'succeeded' && cwd && isScreenshotAvailable()) {
-        try {
-          const artifactUrl = `http://127.0.0.1:${resolvedPort}/api/projects/${projectId}/files/index.html`;
-          const shots = await captureProjectScreenshots(cwd, projectId, artifactUrl);
-          for (const shot of shots) {
-            send('agent', {
-              type: 'screenshot',
-              viewport: shot.viewport,
-              imageUrl: `/api/projects/${projectId}/screenshots/${shot.fileName}`,
-              timestamp: shot.timestamp,
-            });
-          }
-        } catch {
-          // Never block run completion on screenshot failure.
-        }
-      }
-
       design.runs.finish(run, status, code, signal);
     });
   };
@@ -3494,9 +3422,6 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
   //   - `apps/daemon/src/cli.ts`            → expects a `url` string
   //   - `apps/daemon/sidecar/server.ts`     → expects `{ url, server }`
   //   - `apps/daemon/tests/version-route.test.ts` → expects `{ url, server }`
-  // Best-effort Playwright init — never blocks startup.
-  initScreenshotService().catch(() => {});
-
   return await new Promise((resolve, reject) => {
     const server = app.listen(port, host, () => {
       const address = server.address();
