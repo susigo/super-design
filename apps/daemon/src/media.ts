@@ -628,7 +628,7 @@ function buildOpenAIImageUrl(baseUrl, isAzure) {
   return parsed.toString();
 }
 
-function openaiSizeFor(model, aspect) {
+export function openaiSizeFor(model, aspect) {
   // gpt-image-1.5 / gpt-image-2 accept arbitrary sizes up to 4096; we
   // pick concrete ones tuned to common aspects so the API never
   // negotiates them down silently.

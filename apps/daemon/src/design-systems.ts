@@ -8,45 +8,78 @@ import { readdir, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 export async function listDesignSystems(root) {
-  const out = [];
-  let entries = [];
-  try {
-    entries = await readdir(root, { withFileTypes: true });
-  } catch {
-    return out;
-  }
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    const designPath = path.join(root, entry.name, 'DESIGN.md');
+  // Accept either a single root or an array. When multiple roots are
+  // given, later entries override earlier ones on id collision — so
+  // user-imported systems shadow built-ins by design.
+  const roots = Array.isArray(root) ? root : [root];
+  const merged = new Map();
+  for (const r of roots) {
+    if (!r) continue;
+    let entries = [];
     try {
-      const stats = await stat(designPath);
-      if (!stats.isFile()) continue;
-      const raw = await readFile(designPath, 'utf8');
-      const titleMatch = /^#\s+(.+?)\s*$/m.exec(raw);
-      const title = cleanTitle(titleMatch?.[1] ?? entry.name);
-      out.push({
-        id: entry.name,
-        title,
-        category: extractCategory(raw) ?? 'Uncategorized',
-        summary: summarize(raw),
-        swatches: extractSwatches(raw),
-        surface: extractSurface(raw),
-        body: raw,
-      });
+      entries = await readdir(r, { withFileTypes: true });
     } catch {
-      // Skip.
+      continue;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const designPath = path.join(r, entry.name, 'DESIGN.md');
+      try {
+        const stats = await stat(designPath);
+        if (!stats.isFile()) continue;
+        const raw = await readFile(designPath, 'utf8');
+        const titleMatch = /^#\s+(.+?)\s*$/m.exec(raw);
+        const title = cleanTitle(titleMatch?.[1] ?? entry.name);
+        merged.set(entry.name, {
+          id: entry.name,
+          title,
+          category: extractCategory(raw) ?? 'Uncategorized',
+          summary: summarize(raw),
+          swatches: extractSwatches(raw),
+          surface: extractSurface(raw),
+          body: raw,
+          // Track which root the entry came from. Built-in entries
+          // are always read-only; user-dir entries can be deleted.
+          source: r,
+        });
+      } catch {
+        // Skip.
+      }
     }
   }
-  return out;
+  return Array.from(merged.values());
 }
 
 export async function readDesignSystem(root, id) {
-  const file = path.join(root, id, 'DESIGN.md');
-  try {
-    return await readFile(file, 'utf8');
-  } catch {
-    return null;
+  const roots = Array.isArray(root) ? root : [root];
+  // Walk roots in reverse so user-dir wins over built-in (matches
+  // listDesignSystems precedence).
+  for (const r of [...roots].reverse()) {
+    if (!r) continue;
+    const file = path.join(r, id, 'DESIGN.md');
+    try {
+      return await readFile(file, 'utf8');
+    } catch {
+      continue;
+    }
   }
+  return null;
+}
+
+export function findDesignSystemRoot(roots, id) {
+  // Returns the first root (in user-priority order) that contains the
+  // requested id. Used by save / delete so we know which writable root
+  // to target.
+  const list = Array.isArray(roots) ? roots : [roots];
+  return [...list].reverse().find((r) => {
+    if (!r) return false;
+    try {
+      const fs = require('node:fs');
+      return fs.existsSync(path.join(r, id, 'DESIGN.md'));
+    } catch {
+      return false;
+    }
+  });
 }
 
 function summarize(raw) {

@@ -42,6 +42,24 @@ Produce a single-file horizontal-swipe HTML deck for a weekly team update.
    8. Closing + thanks
 4. Arrow keys or click navigation. Each slide is 100vw wide.
 
+## AI-image placeholders (optional)
+
+If a slide wants imagery (cover hero, metric illustration) and the user
+hasn't provided files, leave shaped placeholders so OD's deck-image
+panel can fill them via gpt-image-2:
+
+```html
+<img data-od-image-prompt="warm office team huddle, editorial"
+     data-od-image-id="cover-01"
+     data-od-image-aspect="16:9"
+     alt="cover hero"
+     src="" />
+```
+
+Empty `src` = "needs filling"; the panel writes the generated file under
+`.od/projects/<id>/assets/` and patches `src` to
+`/api/projects/<id>/raw/assets/<file>.png`.
+
 ## Output contract
 
 ```

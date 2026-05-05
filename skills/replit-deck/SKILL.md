@@ -181,6 +181,24 @@ If the user just says "make me a deck" without further guidance, default to `sim
 
 ---
 
+## AI-image placeholders (optional)
+
+When the deck calls for imagery and the user hasn't supplied any, leave
+`<img>` tags shaped like this so OD's deck-image panel can detect and
+fill them:
+
+```html
+<img data-od-image-prompt="aerial city dawn, editorial"
+     data-od-image-id="hero-01"
+     data-od-image-aspect="16:9"
+     alt="hero — aerial city dawn"
+     src="" />
+```
+
+The frontend hits `POST /api/projects/:id/deck/image` per placeholder and
+patches `src` to `/api/projects/<id>/raw/assets/<file>.png`. Empty `src`
+means "needs filling"; filled means "already done".
+
 ## Browser / runtime support
 
 - **Target**: modern evergreen desktop browsers (Chrome 110+ / Safari 16+ / Firefox 115+) and modern mobile Safari / Chrome.

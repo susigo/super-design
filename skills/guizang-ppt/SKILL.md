@@ -127,6 +127,18 @@ od:
   - 总大小控制在 10MB 内(影响翻页流畅度)
 - **如何替换**:保持**同名覆盖**最稳(HTML 里不用改路径);如果文件名变了,记得全局搜 `images/旧名` 改成新名
 - **没图怎么办**:和用户对齐,可以先用占位色块生成结构,等图片后期补;但要告知 layout 4/5/10 等图文混排页没图就没法验证视觉效果
+- **AI 自动配图占位符**(deck 模式专用):若用户希望让 OD 后续用 gpt-image-2 自动配图,请按以下格式占位,前端会自动检测并弹出"配图面板",用户在面板里可挑模板/写 prompt 触发生成。**未填 src 的占位符**会出现在面板顶部:
+  ```html
+  <img data-od-image-prompt="cinematic dawn over neon city, isometric"
+       data-od-image-id="cover-01"
+       data-od-image-aspect="16:9"
+       alt="cover hero — neon city dawn"
+       src="" />
+  ```
+  - `data-od-image-prompt` 是给 gpt-image-2 的英文 prompt(可后期手改)
+  - `data-od-image-id` 全 deck 唯一,用于"重生成"定位节点
+  - `data-od-image-aspect` 取 `1:1` / `16:9` / `9:16` / `4:3` / `3:4` 之一
+  - 生成后 `src` 自动改写为 `/api/projects/<id>/raw/assets/<file>.png`,无需 agent 反向编辑
 
 ### Step 2 · 拷贝模板
 

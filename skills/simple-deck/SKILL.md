@@ -98,6 +98,29 @@ grep 'class="slide' index.html
 
 Read the resulting class list. If you see `light × 4 in a row`, swap one to `dark`. If no `hero dark` exists in an 8+ slide deck, promote one big-stat or closing slide.
 
+### Step 4.5 — (Optional) AI-image placeholders
+
+If the deck wants images and the user hasn't supplied any, leave `<img>`
+tags with this exact shape so OD's deck-image panel can spot them:
+
+```html
+<img data-od-image-prompt="cinematic dawn over neon city, isometric"
+     data-od-image-id="cover-01"
+     data-od-image-aspect="16:9"
+     alt="cover hero — neon city dawn"
+     src="" />
+```
+
+- `data-od-image-prompt` — English prompt for gpt-image-2; user can edit.
+- `data-od-image-id` — unique within the deck so "regenerate" can target it.
+- `data-od-image-aspect` — one of `1:1` / `16:9` / `9:16` / `4:3` / `3:4`.
+
+Ship the deck with `src=""`. The frontend panel calls
+`POST /api/projects/:id/deck/image`, generates the file under
+`.od/projects/<id>/assets/`, and patches the `src` to
+`/api/projects/<id>/raw/assets/<file>.png` in both the live preview
+and the on-disk HTML.
+
 ### Step 5 — Emit the artifact
 
 ```

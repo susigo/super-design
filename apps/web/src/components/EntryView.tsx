@@ -55,6 +55,9 @@ interface Props {
   onAdoptPetInline: (petId: string) => void;
   // Toggle the overlay visibility (wake / tuck) from the rail.
   onTogglePet: () => void;
+  // Re-fetch the design system list — used after the import dialog
+  // saves a new system so the picker sees it without reload.
+  onRefreshDesignSystems?: () => void | Promise<void>;
 }
 
 const SIDEBAR_MIN = 320;
@@ -108,6 +111,7 @@ export function EntryView({
   onAdoptPet,
   onAdoptPetInline,
   onTogglePet,
+  onRefreshDesignSystems,
 }: Props) {
   const t = useT();
   const [topTab, setTopTab] = useState<TopTab>('designs');
@@ -428,6 +432,11 @@ export function EntryView({
                   selectedId={defaultDesignSystemId}
                   onSelect={onChangeDefaultDesignSystem}
                   onPreview={previewDesignSystem}
+                  onImported={() => onRefreshDesignSystems?.()}
+                  apiBaseUrl={config.baseUrl}
+                  apiKey={config.apiKey}
+                  apiModel={config.model}
+                  apiProtocol={config.apiProtocol ?? 'anthropic'}
                 />
               ) : null}
               {topTab === 'image-templates' ? (

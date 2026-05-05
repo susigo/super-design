@@ -5,6 +5,7 @@ import {
   localizeDesignSystemSummary,
 } from '../i18n/content';
 import { fetchDesignSystemShowcase } from '../providers/registry';
+import { ImportDesignSystemDialog } from './ImportDesignSystemDialog';
 import { buildSrcdoc } from '../runtime/srcdoc';
 import type { DesignSystemSummary, Surface } from '../types';
 
@@ -13,6 +14,16 @@ interface Props {
   selectedId: string | null;
   onSelect: (id: string) => void;
   onPreview: (id: string) => void;
+  // Triggered after the user imports + saves a new system from the
+  // ImportDesignSystemDialog. Parent should refresh its `systems` prop.
+  onImported?: (id: string) => void;
+  // Hand the dialog the user's BYOK creds so it can call vision
+  // without asking the user to re-paste them. Optional — when absent,
+  // the dialog shows an inline message pointing at Settings.
+  apiBaseUrl?: string;
+  apiKey?: string;
+  apiModel?: string;
+  apiProtocol?: 'anthropic' | 'openai';
 }
 
 const CATEGORY_ORDER = [
@@ -42,11 +53,22 @@ function surfaceOf(system: DesignSystemSummary): Surface {
   return system.surface ?? 'web';
 }
 
-export function DesignSystemsTab({ systems, selectedId, onSelect, onPreview }: Props) {
+export function DesignSystemsTab({
+  systems,
+  selectedId,
+  onSelect,
+  onPreview,
+  onImported,
+  apiBaseUrl,
+  apiKey,
+  apiModel,
+  apiProtocol,
+}: Props) {
   const { locale, t } = useI18n();
   const [filter, setFilter] = useState('');
   const [surfaceFilter, setSurfaceFilter] = useState<SurfaceFilter>('all');
   const [category, setCategory] = useState<string>('All');
+  const [importOpen, setImportOpen] = useState(false);
   // Cache fetched showcase HTML across re-renders so cards never re-flicker
   // when the user filters / scrolls back. null = "in flight"; undefined =
   // "not yet requested". Mirrors the pattern used by ExamplesTab.
@@ -124,7 +146,29 @@ export function DesignSystemsTab({ systems, selectedId, onSelect, onPreview }: P
             </option>
           ))}
         </select>
+        <button
+          type="button"
+          className="ghost"
+          onClick={() => setImportOpen(true)}
+          title="Import a design system from an asset (image / PDF / HTML)"
+        >
+          + Import
+        </button>
       </div>
+      {importOpen ? (
+        <ImportDesignSystemDialog
+          apiBaseUrl={apiBaseUrl}
+          apiKey={apiKey}
+          apiModel={apiModel}
+          apiProtocol={apiProtocol}
+          onClose={() => setImportOpen(false)}
+          onSaved={(id) => {
+            setImportOpen(false);
+            onImported?.(id);
+            onSelect(id);
+          }}
+        />
+      ) : null}
       <div
         className="examples-filter-row"
         role="tablist"

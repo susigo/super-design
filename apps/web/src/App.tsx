@@ -515,6 +515,10 @@ export function App() {
           onAdoptPet={openPetSettings}
           onAdoptPetInline={handleAdoptPet}
           onTogglePet={handleTogglePet}
+          onRefreshDesignSystems={async () => {
+            const next = await fetchDesignSystems();
+            setDesignSystems(next);
+          }}
         />
       )}
       <PetOverlay

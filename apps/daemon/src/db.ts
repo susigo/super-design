@@ -144,6 +144,37 @@ function migrate(db) {
 
     CREATE INDEX IF NOT EXISTS idx_deployments_project
       ON deployments(project_id, updated_at DESC);
+
+    CREATE TABLE IF NOT EXISTS usage_logs (
+      id TEXT PRIMARY KEY,
+      ts INTEGER NOT NULL,
+      project_id TEXT,
+      conversation_id TEXT,
+      message_id TEXT,
+      agent_id TEXT,
+      surface TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      model TEXT NOT NULL,
+      input_tokens INTEGER,
+      output_tokens INTEGER,
+      cached_read_tokens INTEGER,
+      cached_write_tokens INTEGER,
+      image_count INTEGER,
+      image_size TEXT,
+      audio_seconds REAL,
+      cost_usd_estimate REAL,
+      cost_source TEXT NOT NULL,
+      raw_json TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_usage_ts
+      ON usage_logs(ts DESC);
+    CREATE INDEX IF NOT EXISTS idx_usage_project
+      ON usage_logs(project_id, ts DESC);
+    CREATE INDEX IF NOT EXISTS idx_usage_surface
+      ON usage_logs(surface, ts DESC);
+    CREATE INDEX IF NOT EXISTS idx_usage_provider_model
+      ON usage_logs(provider, model, ts DESC);
   `);
   // Forward-compatible column add for databases created before metadata_json.
   // SQLite has no IF NOT EXISTS for ALTER, so we check pragma_table_info.

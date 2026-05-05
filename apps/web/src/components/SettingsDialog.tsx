@@ -10,6 +10,7 @@ import {
   renderModelOptions,
 } from './modelOptions';
 import { KNOWN_PROVIDERS } from '../state/config';
+import { DEFAULT_HOUSE_PROVIDER } from '../config/default-provider';
 import {
   MAX_MAX_TOKENS,
   MIN_MAX_TOKENS,
@@ -19,6 +20,7 @@ import type { AgentInfo, AppConfig, AppTheme, AppVersionInfo, ExecMode } from '.
 import { MEDIA_PROVIDERS } from '../media/models';
 import type { MediaProvider } from '../media/models';
 import { PetSettings } from './pet/PetSettings';
+import { UsageTab } from './UsageTab';
 import { DEFAULT_NOTIFICATIONS } from '../state/config';
 import {
   FAILURE_SOUNDS,
@@ -32,6 +34,7 @@ import {
 export type SettingsSection =
   | 'execution'
   | 'media'
+  | 'usage'
   | 'language'
   | 'appearance'
   | 'notifications'
@@ -121,6 +124,14 @@ export function SettingsDialog({
   const [languageOpen, setLanguageOpen] = useState(false);
   const [activeSection, setActiveSection] = useState<SettingsSection>(
     defaultSection ?? 'execution',
+  );
+  // When welcome mode is open AND the build ships a "house provider"
+  // (DEFAULT_HOUSE_PROVIDER), default to the simplified one-field
+  // fast-path. Users can opt out via "Show advanced" to see the full
+  // seg-control. Outside welcome we never short-circuit the UI.
+  const houseProvider = DEFAULT_HOUSE_PROVIDER;
+  const [welcomeFastPath, setWelcomeFastPath] = useState<boolean>(
+    Boolean(welcome && houseProvider),
   );
   const [languageMenuRect, setLanguageMenuRect] = useState<DOMRect | null>(null);
   const languageRef = useRef<HTMLDivElement | null>(null);
@@ -329,6 +340,17 @@ export function SettingsDialog({
             </button>
             <button
               type="button"
+              className={`settings-nav-item${activeSection === 'usage' ? ' active' : ''}`}
+              onClick={() => setActiveSection('usage')}
+            >
+              <Icon name="history" size={18} />
+              <span>
+                <strong>Usage</strong>
+                <small>BYOK transparent metering</small>
+              </span>
+            </button>
+            <button
+              type="button"
               className={`settings-nav-item${activeSection === 'about' ? ' active' : ''}`}
               onClick={() => setActiveSection('about')}
             >
@@ -342,6 +364,78 @@ export function SettingsDialog({
           <div className="settings-content">
           {activeSection === 'execution' ? (
             <>
+              {welcomeFastPath && houseProvider ? (
+                <section className="settings-section welcome-fastpath">
+                  <div className="section-head">
+                    <div>
+                      <h3>使用 {houseProvider.label}(推荐)</h3>
+                      <p className="hint">
+                        粘贴 API Key 即可,baseUrl / 模型已为你预先配置好。
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      className="ghost"
+                      onClick={() => {
+                        setWelcomeFastPath(false);
+                        setCfg((c) => ({ ...c, mode: 'api' }));
+                      }}
+                    >
+                      Show advanced
+                    </button>
+                  </div>
+                  <div className="form-row">
+                    <label htmlFor="house-apikey">API Key</label>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <input
+                        id="house-apikey"
+                        type={showApiKey ? 'text' : 'password'}
+                        autoComplete="off"
+                        value={cfg.apiKey}
+                        onChange={(e) =>
+                          setCfg((c) => ({
+                            ...c,
+                            mode: 'api',
+                            apiKey: e.target.value,
+                            baseUrl: houseProvider.baseUrl,
+                            apiProtocol: houseProvider.protocol,
+                            apiProviderBaseUrl: houseProvider.baseUrl,
+                            model: houseProvider.defaultModel,
+                          }))
+                        }
+                        placeholder={`${houseProvider.label} 的 API Key`}
+                        style={{ flex: 1 }}
+                      />
+                      <button
+                        type="button"
+                        className="ghost"
+                        onClick={() => setShowApiKey((v) => !v)}
+                      >
+                        {showApiKey ? 'Hide' : 'Show'}
+                      </button>
+                    </div>
+                  </div>
+                  <dl className="settings-about-list" style={{ marginTop: 12 }}>
+                    <div>
+                      <dt>Base URL</dt>
+                      <dd>
+                        <code>{houseProvider.baseUrl}</code>
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Protocol</dt>
+                      <dd>{houseProvider.protocol}</dd>
+                    </div>
+                    <div>
+                      <dt>Default model</dt>
+                      <dd>
+                        <code>{houseProvider.defaultModel}</code>
+                      </dd>
+                    </div>
+                  </dl>
+                </section>
+              ) : (
+              <>
               <div
                 className="seg-control"
                 role="tablist"
@@ -659,6 +753,8 @@ export function SettingsDialog({
               <p className="hint">{t('settings.apiHint')}</p>
             </section>
           )}
+              </>
+              )}
             </>
           ) : null}
 
@@ -754,6 +850,8 @@ export function SettingsDialog({
           {activeSection === 'pet' ? (
             <PetSettings cfg={cfg} setCfg={setCfg} />
           ) : null}
+
+          {activeSection === 'usage' ? <UsageTab /> : null}
 
           {activeSection === 'about' ? (
             <section className="settings-section">

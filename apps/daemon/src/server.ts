@@ -19,7 +19,13 @@ import {
 import { listSkills } from './skills.js';
 import { listCodexPets, readCodexPetSpritesheet } from './codex-pets.js';
 import { syncCommunityPets } from './community-pets-sync.js';
-import { listDesignSystems, readDesignSystem } from './design-systems.js';
+import {
+  findDesignSystemRoot,
+  listDesignSystems,
+  readDesignSystem,
+} from './design-systems.js';
+import { extractDesignSystem } from './design-import-extract.js';
+import { sanitizeDesignSystemSlug } from './prompts/design-import.js';
 import { attachAcpSession } from './acp.js';
 import { attachPiRpcSession } from './pi-rpc.js';
 import { createClaudeStreamHandler } from './claude-stream.js';
@@ -33,7 +39,7 @@ import { listPromptTemplates, readPromptTemplate } from './prompt-templates.js';
 import { buildDocumentPreview } from './document-preview.js';
 import { lintArtifact, renderFindingsForAgent } from './lint-artifact.js';
 import { loadCraftSections } from './craft.js';
-import { generateMedia } from './media.js';
+import { generateMedia, openaiSizeFor } from './media.js';
 import {
   AUDIO_DURATIONS_SEC,
   AUDIO_MODELS_BY_KIND,
@@ -50,7 +56,9 @@ import {
   decodeMultipartFilename,
   deleteProjectFile,
   ensureProject,
+  kindFor,
   listFiles,
+  mimeFor,
   projectDir,
   readProjectFile,
   removeProjectDir,
@@ -101,6 +109,14 @@ import {
   VERCEL_PROVIDER_ID,
   writeVercelConfig,
 } from './deploy.js';
+import {
+  deleteUsage,
+  listUsageGrouped,
+  listUsageRecent,
+  summarizeUsage,
+  writeUsageLog,
+} from './usage-log.js';
+import { textPriceFor, imagePriceFor } from './pricing.js';
 
 /** @typedef {import('@open-design/contracts').ApiErrorCode} ApiErrorCode */
 /** @typedef {import('@open-design/contracts').ApiError} ApiError */
@@ -288,6 +304,12 @@ const DESIGN_SYSTEMS_DIR = resolveDaemonResourceDir(
   'design-systems',
   path.join(PROJECT_ROOT, 'design-systems'),
 );
+// Writable user-imported design systems live alongside the SQLite DB
+// under RUNTIME_DATA_DIR (default `.od/design-systems/`). Tracks the
+// OD_DATA_DIR override so test/multi-namespace runs stay isolated.
+// User entries shadow built-ins by id (later root wins in
+// listDesignSystems). Resolution happens lazily at request time
+// because RUNTIME_DATA_DIR is a closure binding inside startServer.
 const CRAFT_DIR = resolveDaemonResourceDir(
   DAEMON_RESOURCE_ROOT,
   'craft',
@@ -317,7 +339,15 @@ const RUNTIME_DATA_DIR = process.env.OD_DATA_DIR
   : path.join(PROJECT_ROOT, '.od');
 const ARTIFACTS_DIR = path.join(RUNTIME_DATA_DIR, 'artifacts');
 const PROJECTS_DIR = path.join(RUNTIME_DATA_DIR, 'projects');
+// Writable user-imported design systems land here. Built-ins
+// (DESIGN_SYSTEMS_DIR) stay read-only; user entries shadow built-ins
+// by id when both exist (see listDesignSystems multi-root semantics).
+const USER_DESIGN_SYSTEMS_DIR = path.join(RUNTIME_DATA_DIR, 'design-systems');
+const DESIGN_SYSTEM_ROOTS = [DESIGN_SYSTEMS_DIR, USER_DESIGN_SYSTEMS_DIR];
+const STAGING_DIR = path.join(RUNTIME_DATA_DIR, 'staging', 'design-imports');
 fs.mkdirSync(PROJECTS_DIR, { recursive: true });
+fs.mkdirSync(USER_DESIGN_SYSTEMS_DIR, { recursive: true });
+fs.mkdirSync(STAGING_DIR, { recursive: true });
 
 export const SSE_KEEPALIVE_INTERVAL_MS = 25_000;
 
@@ -1207,7 +1237,7 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
 
   app.get('/api/design-systems', async (_req, res) => {
     try {
-      const systems = await listDesignSystems(DESIGN_SYSTEMS_DIR);
+      const systems = await listDesignSystems(DESIGN_SYSTEM_ROOTS);
       res.json({
         designSystems: systems.map(({ body, ...rest }) => rest),
       });
@@ -1218,7 +1248,7 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
 
   app.get('/api/design-systems/:id', async (req, res) => {
     try {
-      const body = await readDesignSystem(DESIGN_SYSTEMS_DIR, req.params.id);
+      const body = await readDesignSystem(DESIGN_SYSTEM_ROOTS, req.params.id);
       if (body === null)
         return res.status(404).json({ error: 'design system not found' });
       res.json({ id: req.params.id, body });
@@ -1259,7 +1289,7 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
   // file shows up on the next view, no rebuild needed.
   app.get('/api/design-systems/:id/preview', async (req, res) => {
     try {
-      const body = await readDesignSystem(DESIGN_SYSTEMS_DIR, req.params.id);
+      const body = await readDesignSystem(DESIGN_SYSTEM_ROOTS, req.params.id);
       if (body === null)
         return res.status(404).type('text/plain').send('not found');
       const html = renderDesignSystemPreview(req.params.id, body);
@@ -1274,13 +1304,232 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
   // /preview: built at request time, no caching.
   app.get('/api/design-systems/:id/showcase', async (req, res) => {
     try {
-      const body = await readDesignSystem(DESIGN_SYSTEMS_DIR, req.params.id);
+      const body = await readDesignSystem(DESIGN_SYSTEM_ROOTS, req.params.id);
       if (body === null)
         return res.status(404).type('text/plain').send('not found');
       const html = renderDesignSystemShowcase(req.params.id, body);
       res.type('text/html').send(html);
     } catch (err) {
       res.status(500).type('text/plain').send(String(err));
+    }
+  });
+
+  // ---- Sample importer → DESIGN.md ----
+  //
+  // 1. POST /api/design-systems/import/stage  (multipart 'file')
+  //    Stages a single source file under STAGING_DIR. Returns
+  //    { stagingId, kind, mime, size }. Caller hangs on to stagingId.
+  //
+  // 2. POST /api/design-systems/import/extract
+  //    Body: { stagingId, baseUrl, apiKey, model, protocol?, hint? }
+  //    Calls vision (BYOK creds) and returns the rendered DESIGN.md
+  //    body + suggested slug. Streaming SSE adds no value here because
+  //    the upstream `tool_use` is a single-shot — no token stream to
+  //    forward — so we keep it as a single JSON response with up to
+  //    a 90s upstream ceiling.
+  //
+  // 3. POST /api/design-systems/import/save
+  //    Body: { slug, body, sourceFileName? }
+  //    Validates the body parses with extractCategory/Swatches and
+  //    writes <USER_DESIGN_SYSTEMS_DIR>/<slug>/DESIGN.md.
+  //
+  // 4. DELETE /api/design-systems/:id
+  //    Only when the id resides in USER_DESIGN_SYSTEMS_DIR. Built-ins
+  //    (DESIGN_SYSTEMS_DIR) return 403.
+
+  app.post(
+    '/api/design-systems/import/stage',
+    importUpload.single('file'),
+    (req, res) => {
+      if (!isLocalSameOrigin(req, resolvedPort)) {
+        return res.status(403).json({ error: 'cross-origin request rejected' });
+      }
+      if (!req.file) {
+        return sendApiError(res, 400, 'BAD_REQUEST', 'file is required');
+      }
+      try {
+        const stagedName = `${Date.now()}-${Math.random()
+          .toString(36)
+          .slice(2, 8)}-${sanitizeName(req.file.originalname || 'source')}`;
+        const stagedPath = path.join(STAGING_DIR, stagedName);
+        fs.copyFileSync(req.file.path, stagedPath);
+        try {
+          fs.unlinkSync(req.file.path);
+        } catch {
+          /* ignore unlink failure on the upload tmpfile */
+        }
+        return res.json({
+          stagingId: stagedName,
+          kind: kindFor(stagedName),
+          mime: req.file.mimetype || mimeFor(stagedName),
+          size: req.file.size,
+          originalName: req.file.originalname,
+        });
+      } catch (err) {
+        return res
+          .status(500)
+          .json({ error: String(err && err.message ? err.message : err) });
+      }
+    },
+  );
+
+  app.post('/api/design-systems/import/extract', async (req, res) => {
+    if (!isLocalSameOrigin(req, resolvedPort)) {
+      return res.status(403).json({ error: 'cross-origin request rejected' });
+    }
+    const {
+      stagingId,
+      baseUrl,
+      apiKey,
+      model,
+      protocol = 'anthropic',
+      hint,
+    } = req.body || {};
+    if (!stagingId || !baseUrl || !apiKey || !model) {
+      return sendApiError(
+        res,
+        400,
+        'BAD_REQUEST',
+        'stagingId, baseUrl, apiKey, and model are required',
+      );
+    }
+    const validated = validateExternalApiBaseUrl(baseUrl);
+    if (validated.error) {
+      return sendApiError(
+        res,
+        validated.forbidden ? 403 : 400,
+        validated.forbidden ? 'FORBIDDEN' : 'BAD_REQUEST',
+        validated.error,
+      );
+    }
+    const safeStagingName = sanitizeName(String(stagingId));
+    const stagedPath = path.join(STAGING_DIR, safeStagingName);
+    try {
+      const stats = await import('node:fs/promises').then((m) =>
+        m.stat(stagedPath),
+      );
+      if (!stats.isFile()) throw new Error('staged file not found');
+    } catch (err) {
+      return sendApiError(res, 404, 'NOT_FOUND', 'staged source not found');
+    }
+    try {
+      const result = await extractDesignSystem({
+        stagedPath,
+        mime: mimeFor(stagedPath),
+        hint,
+        baseUrl,
+        apiKey,
+        model,
+        protocol,
+      });
+      // Usage row for the import call. We don't have token counts
+      // from a tool_use response unless the provider adds them; record
+      // what we know so the metering page still reflects the activity.
+      try {
+        const tokenInfo = result?.raw?.usage || {};
+        const inputTokens =
+          tokenInfo.input_tokens ?? tokenInfo.prompt_tokens ?? null;
+        const outputTokens =
+          tokenInfo.output_tokens ?? tokenInfo.completion_tokens ?? null;
+        const estimate =
+          inputTokens != null || outputTokens != null
+            ? textPriceFor(model, {
+                inputTokens: inputTokens ?? 0,
+                outputTokens: outputTokens ?? 0,
+              })
+            : null;
+        writeUsageLog(db, {
+          ts: Date.now(),
+          surface: 'text',
+          provider:
+            protocol === 'anthropic'
+              ? 'anthropic-design-import'
+              : 'openai-design-import',
+          model,
+          inputTokens,
+          outputTokens,
+          costUsdEstimate: estimate,
+          costSource: estimate == null ? 'pricing-table-missing' : 'pricing-table',
+        });
+      } catch {
+        /* metering must never break the user's flow */
+      }
+      return res.json({ slug: result.slug, body: result.body });
+    } catch (err) {
+      const status = typeof err?.status === 'number' ? err.status : 502;
+      return res
+        .status(status)
+        .json({ error: String(err && err.message ? err.message : err) });
+    }
+  });
+
+  app.post('/api/design-systems/import/save', async (req, res) => {
+    if (!isLocalSameOrigin(req, resolvedPort)) {
+      return res.status(403).json({ error: 'cross-origin request rejected' });
+    }
+    const slugRaw = typeof req.body?.slug === 'string' ? req.body.slug : '';
+    const body = typeof req.body?.body === 'string' ? req.body.body : '';
+    if (!slugRaw || !body) {
+      return sendApiError(res, 400, 'BAD_REQUEST', 'slug and body required');
+    }
+    if (!/^#\s+\S+/m.test(body)) {
+      return sendApiError(
+        res,
+        400,
+        'INVALID_DESIGN_MD',
+        'design system body must start with an H1 title',
+      );
+    }
+    const slug = sanitizeDesignSystemSlug(slugRaw);
+    const dir = path.join(USER_DESIGN_SYSTEMS_DIR, slug);
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, 'DESIGN.md'), body, 'utf8');
+      const systems = await listDesignSystems(DESIGN_SYSTEM_ROOTS);
+      const summary = systems.find((s) => s.id === slug);
+      return res.json({
+        ok: true,
+        system: summary
+          ? (() => {
+              const { body: _b, ...rest } = summary;
+              return rest;
+            })()
+          : { id: slug },
+      });
+    } catch (err) {
+      return res
+        .status(500)
+        .json({ error: String(err && err.message ? err.message : err) });
+    }
+  });
+
+  app.delete('/api/design-systems/:id', async (req, res) => {
+    if (!isLocalSameOrigin(req, resolvedPort)) {
+      return res.status(403).json({ error: 'cross-origin request rejected' });
+    }
+    const id = req.params.id;
+    const userPath = path.join(USER_DESIGN_SYSTEMS_DIR, id, 'DESIGN.md');
+    if (!fs.existsSync(userPath)) {
+      // Either the id doesn't exist OR it lives in the read-only
+      // built-in dir. Both map to 403 since we never let a delete
+      // touch the built-in catalog.
+      return sendApiError(
+        res,
+        403,
+        'FORBIDDEN',
+        'design system is not user-imported (built-ins are read-only)',
+      );
+    }
+    try {
+      fs.rmSync(path.join(USER_DESIGN_SYSTEMS_DIR, id), {
+        recursive: true,
+        force: true,
+      });
+      return res.json({ ok: true });
+    } catch (err) {
+      return res
+        .status(500)
+        .json({ error: String(err && err.message ? err.message : err) });
     }
   });
 
@@ -1938,6 +2187,47 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
             `[task ${taskId.slice(0, 8)}] done size=${meta?.size} mime=${meta?.mime} ` +
               `elapsed=${Math.round((task.endedAt - task.startedAt) / 1000)}s`,
           );
+          // Record metering only on real-provider successes — stubs and
+          // provider failures should not be billed by the local price
+          // table. We trust meta.intentionalStub / usedStubFallback flags
+          // from generateMedia for that distinction.
+          if (
+            !meta?.intentionalStub &&
+            !meta?.usedStubFallback &&
+            meta?.surface &&
+            meta?.model
+          ) {
+            try {
+              const reqAspect =
+                typeof req.body?.aspect === 'string' ? req.body.aspect : null;
+              const sizeStr = openaiSizeFor(meta.model, reqAspect);
+              if (meta.surface === 'image') {
+                const cost = imagePriceFor(meta.model, sizeStr);
+                writeUsageLog(db, {
+                  ts: Date.now(),
+                  projectId,
+                  conversationId:
+                    typeof req.body?.conversationId === 'string'
+                      ? req.body.conversationId
+                      : null,
+                  messageId:
+                    typeof req.body?.messageId === 'string'
+                      ? req.body.messageId
+                      : null,
+                  surface: 'image',
+                  provider: meta.providerId || 'unknown',
+                  model: meta.model,
+                  imageCount: 1,
+                  imageSize: sizeStr,
+                  costUsdEstimate: cost,
+                  costSource:
+                    cost == null ? 'pricing-table-missing' : 'pricing-table',
+                });
+              }
+            } catch {
+              // metering must never break the user's flow
+            }
+          }
         })
         .catch((err) => {
           task.status = 'failed';
@@ -1965,6 +2255,132 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
       const body = { error: String(err && err.message ? err.message : err) };
       if (code) body.code = code;
       res.status(status).json(body);
+    }
+  });
+
+  // ---- Deck image panel (gpt-image-2) ----
+  //
+  // The deck-image side panel calls this for each placeholder
+  // (`<img data-od-image-prompt="…" data-od-image-id="…">`). We run
+  // generateMedia synchronously with a 90s ceiling so a hung upstream
+  // can't pin a daemon thread. The response is a single JSON object
+  // ready to plug back into the iframe.
+  app.post('/api/projects/:id/deck/image', async (req, res) => {
+    if (!isLocalSameOrigin(req, resolvedPort)) {
+      return res.status(403).json({ error: 'cross-origin request rejected' });
+    }
+    const projectId = req.params.id;
+    const project = getProject(db, projectId);
+    if (!project) return res.status(404).json({ error: 'project not found' });
+
+    const prompt =
+      typeof req.body?.prompt === 'string' ? req.body.prompt.trim() : '';
+    if (!prompt) {
+      return sendApiError(res, 400, 'BAD_REQUEST', 'prompt is required');
+    }
+    const aspect =
+      typeof req.body?.aspect === 'string' ? req.body.aspect : '1:1';
+    const model =
+      typeof req.body?.model === 'string' && req.body.model
+        ? req.body.model
+        : 'gpt-image-2';
+    const placeholderId =
+      typeof req.body?.placeholderId === 'string'
+        ? req.body.placeholderId
+        : null;
+    const conversationId =
+      typeof req.body?.conversationId === 'string'
+        ? req.body.conversationId
+        : null;
+
+    try {
+      const meta = await generateMedia({
+        projectRoot: PROJECT_ROOT,
+        projectsRoot: PROJECTS_DIR,
+        projectId,
+        surface: 'image',
+        model,
+        prompt,
+        aspect,
+      });
+      // Per-call usage row — the same shape as the media-task path so
+      // downstream usage views aggregate consistently. Skip on stub /
+      // provider-error responses; users shouldn't see a price tag for
+      // bytes the provider didn't produce.
+      if (
+        !meta?.intentionalStub &&
+        !meta?.usedStubFallback &&
+        meta?.surface === 'image' &&
+        meta?.model
+      ) {
+        try {
+          const sizeStr = openaiSizeFor(meta.model, aspect);
+          const cost = imagePriceFor(meta.model, sizeStr);
+          writeUsageLog(db, {
+            ts: Date.now(),
+            projectId,
+            conversationId,
+            surface: 'image',
+            provider: meta.providerId || 'unknown',
+            model: meta.model,
+            imageCount: 1,
+            imageSize: sizeStr,
+            costUsdEstimate: cost,
+            costSource: cost == null ? 'pricing-table-missing' : 'pricing-table',
+          });
+        } catch {
+          /* metering must never break the user's flow */
+        }
+      }
+      return res.json({
+        placeholderId,
+        src: `/api/projects/${encodeURIComponent(projectId)}/raw/${encodeURIComponent(meta.name)}`,
+        name: meta.name,
+        sizeBytes: meta.size,
+        mime: meta.mime,
+        model: meta.model,
+        providerId: meta.providerId,
+        providerNote: meta.providerNote,
+        providerError: meta.providerError ?? null,
+      });
+    } catch (err) {
+      const status = typeof err?.status === 'number' ? err.status : 400;
+      const code = err?.code;
+      const body = { error: String(err && err.message ? err.message : err) };
+      if (code) body.code = code;
+      return res.status(status).json(body);
+    }
+  });
+
+  // Write back deck HTML after the image panel patches `<img src>`.
+  // We accept a JSON body { name: 'index.html', content: '<!doctype …' }
+  // and route it through the existing project file writer which already
+  // sanitises the filename and prevents path traversal.
+  app.put('/api/projects/:id/deck/html', async (req, res) => {
+    if (!isLocalSameOrigin(req, resolvedPort)) {
+      return res.status(403).json({ error: 'cross-origin request rejected' });
+    }
+    const projectId = req.params.id;
+    const project = getProject(db, projectId);
+    if (!project) return res.status(404).json({ error: 'project not found' });
+
+    const name =
+      typeof req.body?.name === 'string' && req.body.name
+        ? req.body.name
+        : 'index.html';
+    const content = typeof req.body?.content === 'string' ? req.body.content : '';
+    if (!content) {
+      return sendApiError(res, 400, 'BAD_REQUEST', 'content required');
+    }
+    if (content.length > 8 * 1024 * 1024) {
+      return sendApiError(res, 413, 'BAD_REQUEST', 'content too large (max 8MB)');
+    }
+    try {
+      const file = await writeProjectFile(PROJECTS_DIR, projectId, name, content);
+      res.json({ ok: true, file });
+    } catch (err) {
+      const msg = String(err && err.message ? err.message : err);
+      res.status(400).json({ error: msg });
     }
   });
 
@@ -2133,11 +2549,11 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
     let designSystemBody;
     let designSystemTitle;
     if (effectiveDesignSystemId) {
-      const systems = await listDesignSystems(DESIGN_SYSTEMS_DIR);
+      const systems = await listDesignSystems(DESIGN_SYSTEM_ROOTS);
       const summary = systems.find((s) => s.id === effectiveDesignSystemId);
       designSystemTitle = summary?.title;
       designSystemBody =
-        (await readDesignSystem(DESIGN_SYSTEMS_DIR, effectiveDesignSystemId)) ??
+        (await readDesignSystem(DESIGN_SYSTEM_ROOTS, effectiveDesignSystemId)) ??
         undefined;
     }
 
@@ -2432,16 +2848,84 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
     child.stdout.setEncoding('utf8');
     child.stderr.setEncoding('utf8');
 
+    // Side-channel: when a stream handler emits a 'usage' event we
+    // persist a row to usage_logs for transparent metering. Failures
+    // never bubble; see usage-log.ts.
+    const recordUsageEvent = (ev) => {
+      if (!ev || ev.type !== 'usage') return;
+      try {
+        const usage = ev.usage || {};
+        const inputTokens =
+          usage.input_tokens ??
+          usage.inputTokens ??
+          usage.prompt_tokens ??
+          null;
+        const outputTokens =
+          usage.output_tokens ??
+          usage.outputTokens ??
+          usage.completion_tokens ??
+          null;
+        const cachedRead =
+          usage.cache_read_input_tokens ??
+          usage.cachedReadInputTokens ??
+          null;
+        const cachedWrite =
+          usage.cache_creation_input_tokens ??
+          usage.cachedCreationInputTokens ??
+          null;
+        const providerCost = ev.costUsd;
+        const hasProviderCost =
+          typeof providerCost === 'number' && Number.isFinite(providerCost);
+        const estimate = hasProviderCost
+          ? providerCost
+          : textPriceFor(safeModel, {
+              inputTokens: inputTokens ?? 0,
+              outputTokens: outputTokens ?? 0,
+              cachedReadTokens: cachedRead ?? 0,
+            });
+        let costSource = 'pricing-table';
+        if (hasProviderCost) costSource = 'provider';
+        else if (estimate == null) costSource = 'pricing-table-missing';
+        writeUsageLog(db, {
+          ts: Date.now(),
+          projectId: typeof projectId === 'string' ? projectId : null,
+          conversationId:
+            typeof conversationId === 'string' ? conversationId : null,
+          messageId:
+            typeof assistantMessageId === 'string'
+              ? assistantMessageId
+              : null,
+          agentId: typeof agentId === 'string' ? agentId : null,
+          surface: 'text',
+          provider: agentId === 'claude' ? 'anthropic' : agentId || 'unknown',
+          model: safeModel || 'unknown',
+          inputTokens,
+          outputTokens,
+          cachedReadTokens: cachedRead,
+          cachedWriteTokens: cachedWrite,
+          costUsdEstimate: estimate,
+          costSource,
+          raw: usage,
+        });
+      } catch {
+        // never break the stream
+      }
+    };
+    const sendAgent = (ev) => {
+      recordUsageEvent(ev);
+      send('agent', ev);
+    };
+
     // Structured streams (Claude Code) go through a line-delimited JSON
     // parser that turns stream_event objects into UI-friendly events. For
     // plain streams (most other CLIs) we forward raw chunks unchanged so
     // the browser can append them to the assistant's text buffer.
     if (def.streamFormat === 'claude-stream-json') {
-      const claude = createClaudeStreamHandler((ev) => send('agent', ev));
+      const claude = createClaudeStreamHandler(sendAgent);
       child.stdout.on('data', (chunk) => claude.feed(chunk));
       child.on('close', () => claude.flush());
     } else if (def.streamFormat === 'copilot-stream-json') {
-      const copilot = createCopilotStreamHandler((ev) => send('agent', ev));
+      const copilot = createCopilotStreamHandler(sendAgent);
       child.stdout.on('data', (chunk) => copilot.feed(chunk));
       child.on('close', () => copilot.flush());
     } else if (def.streamFormat === 'pi-rpc') {
@@ -2450,7 +2934,10 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
         prompt: composed,
         cwd: cwd || PROJECT_ROOT,
         model: safeModel,
-        send,
+        send: (event, data) => {
+          if (event === 'agent') recordUsageEvent(data);
+          send(event, data);
+        },
       });
     } else if (def.streamFormat === 'acp-json-rpc') {
       acpSession = attachAcpSession({
@@ -2458,12 +2945,15 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
         prompt: composed,
         cwd: cwd || PROJECT_ROOT,
         model: safeModel,
-        send,
+        send: (event, data) => {
+          if (event === 'agent') recordUsageEvent(data);
+          send(event, data);
+        },
       });
     } else if (def.streamFormat === 'json-event-stream') {
       const handler = createJsonEventStreamHandler(
         def.eventParser || def.id,
-        (ev) => send('agent', ev),
+        sendAgent,
       );
       child.stdout.on('data', (chunk) => handler.feed(chunk));
       child.on('close', () => handler.flush());
@@ -2609,6 +3099,10 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
     }
 
     const sse = createSseResponse(res);
+    let proxyInputTokens = null;
+    let proxyOutputTokens = null;
+    let proxyCachedRead = null;
+    let proxyCachedWrite = null;
     try {
       const response = await fetch(url, {
         method: 'POST',
@@ -2650,6 +3144,23 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
             if (dataLine && dataLine.startsWith('data: ')) {
               try {
                 const data = JSON.parse(dataLine.slice(6));
+                if (event === 'message_start' && data?.message?.usage) {
+                  const u = data.message.usage;
+                  if (typeof u.input_tokens === 'number')
+                    proxyInputTokens = u.input_tokens;
+                  if (typeof u.cache_read_input_tokens === 'number')
+                    proxyCachedRead = u.cache_read_input_tokens;
+                  if (typeof u.cache_creation_input_tokens === 'number')
+                    proxyCachedWrite = u.cache_creation_input_tokens;
+                  if (typeof u.output_tokens === 'number')
+                    proxyOutputTokens = u.output_tokens;
+                } else if (event === 'message_delta' && data?.usage) {
+                  const u = data.usage;
+                  if (typeof u.output_tokens === 'number')
+                    proxyOutputTokens = u.output_tokens;
+                  if (typeof u.input_tokens === 'number' && proxyInputTokens == null)
+                    proxyInputTokens = u.input_tokens;
+                }
                 sse.send(event, data);
               } catch (e) {
                 // ignore parse errors for partial chunks
@@ -2663,6 +3174,26 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
       console.error(`[proxy:anthropic] internal error: ${err.message}`);
       sse.send('error', { message: err.message });
       sse.end();
+    } finally {
+      if (proxyInputTokens != null || proxyOutputTokens != null) {
+        const estimate = textPriceFor(model, {
+          inputTokens: proxyInputTokens ?? 0,
+          outputTokens: proxyOutputTokens ?? 0,
+          cachedReadTokens: proxyCachedRead ?? 0,
+        });
+        writeUsageLog(db, {
+          ts: Date.now(),
+          surface: 'text',
+          provider: 'anthropic-proxy',
+          model,
+          inputTokens: proxyInputTokens,
+          outputTokens: proxyOutputTokens,
+          cachedReadTokens: proxyCachedRead,
+          cachedWriteTokens: proxyCachedWrite,
+          costUsdEstimate: estimate,
+          costSource: estimate == null ? 'pricing-table-missing' : 'pricing-table',
+        });
+      }
     }
   });
 
@@ -2709,9 +3240,16 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
       max_tokens:
         typeof maxTokens === 'number' && maxTokens > 0 ? maxTokens : 8192,
       stream: true,
+      // Ask compatible providers for the final usage chunk so we can
+      // record token counts. Providers that ignore stream_options just
+      // omit the chunk; we degrade to no metering, never error.
+      stream_options: { include_usage: true },
     };
 
     const sse = createSseResponse(res);
+    let openaiInputTokens = null;
+    let openaiOutputTokens = null;
+    let openaiCachedRead = null;
     try {
       const response = await fetch(url, {
         method: 'POST',
@@ -2751,6 +3289,18 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
             if (dataStr === '[DONE]') break;
             try {
               const data = JSON.parse(dataStr);
+              if (data?.usage) {
+                if (typeof data.usage.prompt_tokens === 'number')
+                  openaiInputTokens = data.usage.prompt_tokens;
+                if (typeof data.usage.completion_tokens === 'number')
+                  openaiOutputTokens = data.usage.completion_tokens;
+                if (
+                  data.usage.prompt_tokens_details?.cached_tokens != null
+                ) {
+                  openaiCachedRead =
+                    data.usage.prompt_tokens_details.cached_tokens;
+                }
+              }
               sse.send('message', data);
             } catch (e) {
               // ignore parse errors for partial chunks
@@ -2763,6 +3313,105 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
       console.error(`[proxy:openai] internal error: ${err.message}`);
       sse.send('error', { message: err.message });
       sse.end();
+    } finally {
+      if (openaiInputTokens != null || openaiOutputTokens != null) {
+        const estimate = textPriceFor(model, {
+          inputTokens: openaiInputTokens ?? 0,
+          outputTokens: openaiOutputTokens ?? 0,
+          cachedReadTokens: openaiCachedRead ?? 0,
+        });
+        writeUsageLog(db, {
+          ts: Date.now(),
+          surface: 'text',
+          provider: 'openai-proxy',
+          model,
+          inputTokens: openaiInputTokens,
+          outputTokens: openaiOutputTokens,
+          cachedReadTokens: openaiCachedRead,
+          costUsdEstimate: estimate,
+          costSource: estimate == null ? 'pricing-table-missing' : 'pricing-table',
+        });
+      }
+    }
+  });
+
+  // ---- BYOK transparent metering ----
+  //
+  // Read-only views over the usage_logs table. Writes happen as a
+  // side-effect of chat / proxy / media generation (see writeUsageLog
+  // call sites above). All four routes are restricted to local same-
+  // origin so a remote browser can't snoop another user's history.
+
+  app.get('/api/usage', (req, res) => {
+    if (!isLocalSameOrigin(req, resolvedPort)) {
+      return res.status(403).json({ error: 'cross-origin request rejected' });
+    }
+    try {
+      const from = parseTsParam(req.query.from, 0);
+      const to = parseTsParam(req.query.to, Number.MAX_SAFE_INTEGER);
+      const groupBy =
+        typeof req.query.groupBy === 'string' ? req.query.groupBy : 'surface';
+      const projectId =
+        typeof req.query.projectId === 'string' && req.query.projectId
+          ? req.query.projectId
+          : undefined;
+      const result = listUsageGrouped(db, { from, to, groupBy, projectId });
+      res.json(result);
+    } catch (err) {
+      res
+        .status(500)
+        .json({ error: String(err && err.message ? err.message : err) });
+    }
+  });
+
+  app.get('/api/usage/summary', (req, res) => {
+    if (!isLocalSameOrigin(req, resolvedPort)) {
+      return res.status(403).json({ error: 'cross-origin request rejected' });
+    }
+    try {
+      const period =
+        typeof req.query.period === 'string' && req.query.period
+          ? req.query.period
+          : '30d';
+      res.json(summarizeUsage(db, period));
+    } catch (err) {
+      res
+        .status(500)
+        .json({ error: String(err && err.message ? err.message : err) });
+    }
+  });
+
+  app.get('/api/usage/recent', (req, res) => {
+    if (!isLocalSameOrigin(req, resolvedPort)) {
+      return res.status(403).json({ error: 'cross-origin request rejected' });
+    }
+    try {
+      const limit = Number.parseInt(String(req.query.limit ?? '50'), 10);
+      res.json({
+        rows: listUsageRecent(db, Number.isFinite(limit) ? limit : 50),
+      });
+    } catch (err) {
+      res
+        .status(500)
+        .json({ error: String(err && err.message ? err.message : err) });
+    }
+  });
+
+  app.delete('/api/usage', (req, res) => {
+    if (!isLocalSameOrigin(req, resolvedPort)) {
+      return res.status(403).json({ error: 'cross-origin request rejected' });
+    }
+    try {
+      const before = parseTsParam(req.query.before, undefined);
+      const removed = deleteUsage(
+        db,
+        typeof before === 'number' ? before : undefined,
+      );
+      res.json({ ok: true, removed });
+    } catch (err) {
+      res
+        .status(500)
+        .json({ error: String(err && err.message ? err.message : err) });
     }
   });
 
@@ -2829,6 +3478,12 @@ function assembleExample(templateHtml, slidesHtml, title) {
       /<title>.*?<\/title>/,
       `<title>${title} | Open Design Example</title>`,
     );
+}
+
+function parseTsParam(value, fallback) {
+  if (value == null || value === '') return fallback;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
 }
 
 export function isLocalSameOrigin(req, port) {

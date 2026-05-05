@@ -29,6 +29,7 @@ import { buildSrcdoc } from '../runtime/srcdoc';
 import { saveTemplate } from '../state/projects';
 import type { DeployConfigResponse, DeployProjectFileResponse, ProjectFile } from '../types';
 import { Icon } from './Icon';
+import { DeckImagePanel } from './DeckImagePanel';
 import {
   liveSnapshotForComment,
   overlayBoundsFromSnapshot,
@@ -620,6 +621,7 @@ function HtmlViewer({
   const [inTabPresent, setInTabPresent] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [commentMode, setCommentMode] = useState(false);
+  const [imagePanelOpen, setImagePanelOpen] = useState(false);
   const [activeCommentTarget, setActiveCommentTarget] = useState<PreviewCommentSnapshot | null>(null);
   const [hoveredCommentTarget, setHoveredCommentTarget] = useState<PreviewCommentSnapshot | null>(null);
   const [liveCommentTargets, setLiveCommentTargets] = useState<Map<string, PreviewCommentSnapshot>>(() => new Map());
@@ -1167,6 +1169,18 @@ function HtmlViewer({
             <Icon name="comment" size={13} />
             <span>{t('fileViewer.comment')}</span>
           </button>
+          {effectiveDeck ? (
+            <button
+              className={`viewer-action${imagePanelOpen ? ' active' : ''}`}
+              type="button"
+              data-testid="deck-image-panel-toggle"
+              title="AI 配图 (gpt-image-2)"
+              onClick={() => setImagePanelOpen((v) => !v)}
+            >
+              <Icon name="image" size={13} />
+              <span>AI 配图</span>
+            </button>
+          ) : null}
           <button
             className="viewer-action"
             type="button"
@@ -1399,7 +1413,16 @@ function HtmlViewer({
           ) : null}
         </div>
       </div>
-      <div className="viewer-body" ref={previewBodyRef}>
+      <div
+        className="viewer-body"
+        ref={previewBodyRef}
+        style={
+          imagePanelOpen && effectiveDeck && mode === 'preview'
+            ? { display: 'flex', alignItems: 'stretch', overflow: 'hidden' }
+            : undefined
+        }
+      >
+        <div style={imagePanelOpen && effectiveDeck && mode === 'preview' ? { flex: 1, position: 'relative', overflow: 'auto' } : undefined}>
         {source === null ? (
           <div className="viewer-empty">{t('fileViewer.loading')}</div>
         ) : mode === 'preview' ? (
@@ -1458,6 +1481,30 @@ function HtmlViewer({
         ) : (
           <pre className="viewer-source">{source}</pre>
         )}
+        </div>
+        {imagePanelOpen && effectiveDeck && mode === 'preview' && source ? (
+          <DeckImagePanel
+            source={source}
+            projectId={projectId}
+            onPatched={(next) => {
+              setSource(next);
+              // Fire-and-forget HTML write-back so the patch survives
+              // page reloads. We don't block the UI on this — if it
+              // fails the in-memory iframe still has the new image.
+              fetch(
+                `/api/projects/${encodeURIComponent(projectId)}/deck/html`,
+                {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ name: file.name, content: next }),
+                },
+              ).catch((err) => {
+                console.warn('[deck-image] HTML write-back failed', err);
+              });
+            }}
+            onClose={() => setImagePanelOpen(false)}
+          />
+        ) : null}
       </div>
       {inTabPresent && source ? (
         <div
