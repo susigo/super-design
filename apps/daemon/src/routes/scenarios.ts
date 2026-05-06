@@ -1,34 +1,24 @@
 import express from 'express';
+import type { ScenarioManifest } from '@open-design/scenarios-core';
+import { frontendDesignManifest } from '@open-design/scenarios-frontend-design';
+import { pptDesignManifest } from '@open-design/scenarios-ppt-design';
 
-interface ScenarioManifestResponse {
-  id: string;
-  version: string;
-  displayName: Record<string, string>;
-  capabilities: { id: string; version: string; required: boolean }[];
-  modes: string[];
-}
+type ScenarioManifestResponse = Pick<
+  ScenarioManifest,
+  'id' | 'version' | 'displayName' | 'capabilities' | 'modes'
+>;
 
 const KNOWN_SCENARIOS: ScenarioManifestResponse[] = [
-  {
-    id: 'ppt-design',
-    version: '0.1.0',
-    displayName: { en: 'PPT Design', 'zh-CN': 'PPT 设计' },
-    capabilities: [
-      { id: 'image-gen', version: '^0', required: true },
-      { id: 'music-gen', version: '^0', required: false },
-    ],
-    modes: ['chat'],
-  },
-  {
-    id: 'frontend-design',
-    version: '0.1.0',
-    displayName: { en: 'Frontend Design', 'zh-CN': '前端设计' },
-    capabilities: [
-      { id: 'image-gen', version: '^0', required: false },
-    ],
-    modes: ['chat', 'sketch'],
-  },
+  toScenarioManifestResponse(pptDesignManifest),
+  toScenarioManifestResponse(frontendDesignManifest),
 ];
+
+function toScenarioManifestResponse(
+  manifest: ScenarioManifest,
+): ScenarioManifestResponse {
+  const { protocol: _protocol, designSystems: _designSystems, ...rest } = manifest;
+  return rest;
+}
 
 export function createScenariosRouter(_ctx: unknown): import('express').Router {
   const router = express.Router();

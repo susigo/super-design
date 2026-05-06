@@ -23,12 +23,30 @@ importers:
 
   apps/daemon:
     dependencies:
+      '@open-design/capabilities-core':
+        specifier: workspace:0.3.0
+        version: link:../../packages/capabilities/core
+      '@open-design/capabilities-image-gen':
+        specifier: workspace:0.3.0
+        version: link:../../packages/capabilities/image-gen
+      '@open-design/capabilities-music-gen':
+        specifier: workspace:0.3.0
+        version: link:../../packages/capabilities/music-gen
       '@open-design/contracts':
         specifier: workspace:0.3.0
         version: link:../../packages/contracts
       '@open-design/platform':
         specifier: workspace:0.3.0
         version: link:../../packages/platform
+      '@open-design/scenarios-core':
+        specifier: workspace:0.3.0
+        version: link:../../packages/scenarios/core
+      '@open-design/scenarios-frontend-design':
+        specifier: workspace:0.3.0
+        version: link:../../packages/scenarios/frontend-design
+      '@open-design/scenarios-ppt-design':
+        specifier: workspace:0.3.0
+        version: link:../../packages/scenarios/ppt-design
       '@open-design/sidecar':
         specifier: workspace:0.3.0
         version: link:../../packages/sidecar

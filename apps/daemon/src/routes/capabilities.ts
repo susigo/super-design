@@ -1,26 +1,21 @@
 import express from 'express';
+import type { CapabilityDescriptor } from '@open-design/capabilities-core';
+import { imageGenCapabilityDescriptor } from '@open-design/capabilities-image-gen';
+import { musicGenCapabilityDescriptor } from '@open-design/capabilities-music-gen';
 
-interface CapabilityDescriptorResponse {
-  id: string;
-  version: string;
-  providers: string[];
-  cost: { unit: string; defaultUsdPerUnit?: number };
-}
+type CapabilityDescriptorResponse = Omit<CapabilityDescriptor, 'protocol'>;
 
 const KNOWN_CAPABILITIES: CapabilityDescriptorResponse[] = [
-  {
-    id: 'image-gen',
-    version: '0.1.0',
-    providers: ['openai', 'volcengine', 'grok'],
-    cost: { unit: 'image', defaultUsdPerUnit: 0.04 },
-  },
-  {
-    id: 'music-gen',
-    version: '0.1.0',
-    providers: ['suno', 'udio', 'google'],
-    cost: { unit: 'second', defaultUsdPerUnit: 0.01 },
-  },
+  toCapabilityDescriptorResponse(imageGenCapabilityDescriptor),
+  toCapabilityDescriptorResponse(musicGenCapabilityDescriptor),
 ];
+
+function toCapabilityDescriptorResponse(
+  descriptor: CapabilityDescriptor,
+): CapabilityDescriptorResponse {
+  const { protocol: _protocol, ...rest } = descriptor;
+  return rest;
+}
 
 export function createCapabilitiesRouter(_ctx: unknown): import('express').Router {
   const router = express.Router();
