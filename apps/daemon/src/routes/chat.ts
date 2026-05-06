@@ -2,6 +2,7 @@
 import express from 'express';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
+import { tmpdir } from 'node:os';
 import fs from 'node:fs';
 import { composeSystemPrompt } from '../prompts/system.js';
 import { createCommandInvocation } from '@open-design/platform';
@@ -52,10 +53,7 @@ export function createChatRouter(ctx): import("express").Router {
   // DESIGN_SYSTEMS_DIR is the first element of designSystemRoots (the built-in one)
   const DESIGN_SYSTEMS_DIR = designSystemRoots[0];
 
-  const UPLOAD_DIR = (() => {
-    const { tmpdir } = require('node:os');
-    return require('node:path').join(tmpdir(), 'od-uploads');
-  })();
+  const UPLOAD_DIR = path.join(tmpdir(), 'od-uploads');
 
   /**
    * Execute a DaemonScenario and map its ScenarioRunEvents to the SSE stream

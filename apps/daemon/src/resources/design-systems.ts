@@ -4,6 +4,7 @@
 // `> Category: <name>` blockquote line beneath the H1. Summary is the first
 // paragraph between the H1 and the next heading (Category line stripped).
 
+import { existsSync } from 'node:fs';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -74,8 +75,7 @@ export function findDesignSystemRoot(roots, id) {
   return [...list].reverse().find((r) => {
     if (!r) return false;
     try {
-      const fs = require('node:fs');
-      return fs.existsSync(path.join(r, id, 'DESIGN.md'));
+      return existsSync(path.join(r, id, 'DESIGN.md'));
     } catch {
       return false;
     }

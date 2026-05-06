@@ -36,11 +36,11 @@ export {
 export {
   normalizeCommentAttachments,
   renderCommentAttachmentHint,
-} from './routes/comment-helpers.js';
+} from './project-status/comment-helpers.js';
 export {
   composeProjectDisplayStatus,
   normalizeProjectDisplayStatus,
-} from './routes/project-status-helpers.js';
+} from './project-status/helpers.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
