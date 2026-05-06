@@ -46,6 +46,7 @@ export function createChatRouter(ctx): import("express").Router {
     design,
     scenarioRunner,
     pptDesignScenario,
+    frontendDesignScenario,
   } = ctx;
 
   // DESIGN_SYSTEMS_DIR is the first element of designSystemRoots (the built-in one)
@@ -334,12 +335,17 @@ export function createChatRouter(ctx): import("express").Router {
     if (typeof skillId === 'string' && skillId && cwd) {
       const allSkills = await listSkills(skillsDir).catch(() => []);
       const resolvedSkill = allSkills.find((s) => s.id === skillId);
-      if (resolvedSkill?.scenario === 'ppt-design') {
+      const scenarioMap: Record<string, typeof pptDesignScenario> = {
+        'ppt-design': pptDesignScenario,
+        'frontend-design': frontendDesignScenario,
+      };
+      const matchedScenario = resolvedSkill?.scenario ? scenarioMap[resolvedSkill.scenario] : undefined;
+      if (matchedScenario) {
         await runScenarioChatRun({
           run,
           send: (event, data) => design.runs.emit(run, event, data),
           finish: (status, code) => design.runs.finish(run, status, code, null),
-          scenario: pptDesignScenario,
+          scenario: matchedScenario,
           input: {
             runId: run.id,
             prompt: message || '',

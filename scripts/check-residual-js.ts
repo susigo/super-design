@@ -26,6 +26,8 @@ const allowedExactPaths = new Set([
   "packages/platform/esbuild.config.mjs",
   "packages/sidecar/esbuild.config.mjs",
   "packages/sidecar-proto/esbuild.config.mjs",
+  // ESLint flat config is loaded directly by ESLint.
+  "eslint.config.mjs",
   // Maintainer utility scripts ported from the media branch. They are
   // executed directly by Node and are not loaded by the app runtime.
   "scripts/import-prompt-templates.mjs",

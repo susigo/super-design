@@ -141,3 +141,35 @@ export interface SyncCommunityPetsResponse {
   // Up to ~10 surfaced error messages (the daemon log keeps the rest).
   errors: string[];
 }
+
+export interface CapabilityDescriptorResponse {
+  id: string;
+  version: string;
+  providers: string[];
+  cost: {
+    unit: string;
+    defaultUsdPerUnit?: number;
+  };
+}
+
+export interface CapabilitiesResponse {
+  capabilities: CapabilityDescriptorResponse[];
+}
+
+export interface ScenarioCapabilityRequirement {
+  id: string;
+  version: string;
+  required: boolean;
+}
+
+export interface ScenarioManifestResponse {
+  id: string;
+  version: string;
+  displayName: Record<string, string>;
+  capabilities: ScenarioCapabilityRequirement[];
+  modes: string[];
+}
+
+export interface ScenariosResponse {
+  scenarios: ScenarioManifestResponse[];
+}

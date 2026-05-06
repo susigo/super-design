@@ -214,6 +214,18 @@ node --experimental-strip-types scripts/sync-litellm-models.ts
 
 ---
 
+## 加一个 Capability 或 Scenario
+
+Capability 和 scenario 是 skill 背后的类型化 contract 层。只有当你要新增可复用的模型能力，或新增产品级体验时才需要改这里；普通 skill metadata 不需要进这一层。
+
+**Capability** 放在 `packages/capabilities/<id>/`，只拥有纯 TypeScript 的输入、输出、成本等 contract。运行时实现、provider SDK、文件写入、SQLite、缓存逻辑都放在 `apps/daemon/src/capabilities/<id>/`。新增时按 [`docs/capabilities.md`](docs/capabilities.md) 走。
+
+**Scenario** 放在 `packages/scenarios/<id>/`，发布 manifest，并用 SemVer range 声明它需要哪些 capability。运行时编排、prompt template、后处理都放在 `apps/daemon/src/scenarios/<id>/`。新增时按 [`docs/scenarios.md`](docs/scenarios.md) 走。
+
+改 capability 或 scenario 的 public source 之前，先跑 `pnpm lint:layers` 和 `pnpm check:capability-semver`。CI 要求这些 public contract source 变化时，对应 package 的 version 也要一起变。
+
+---
+
 ## 代码风格
 
 格式我们不抠（保存时跑 Prettier 就行），但有两条不能让 —— 因为它们出现在提示词栈和用户可见的 API 里：

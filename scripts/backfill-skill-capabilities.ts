@@ -95,13 +95,12 @@ function patchFrontmatter(
   const fmMatch = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(src);
   if (!fmMatch) return { patched: src, changed: false };
 
-  let fm = fmMatch[1];
+  let fm = fmMatch[1]!;
   const rest = src.slice(fmMatch[0].length);
   let changed = false;
 
   // ── capabilities_used ──────────────────────────────────────────────────
   if (!fm.includes('capabilities_used:')) {
-    // Find the od: block and append capabilities_used inside it
     fm = fm.replace(/^(od:\s*\n(?:[ \t]+\S.*\n)*)/m, (odBlock) => {
       changed = true;
       return odBlock.trimEnd() + '\n' + buildCapabilitiesYaml(caps) + '\n';
@@ -110,7 +109,6 @@ function patchFrontmatter(
 
   // ── od.scenario ────────────────────────────────────────────────────────
   if (newScenario) {
-    // Replace existing scenario value under od:
     const scenarioReplaced = fm.replace(
       /(^|\n)([ \t]+scenario:\s*)\S+/,
       (_, prefix, key) => {
@@ -170,7 +168,7 @@ async function main() {
     // Minimal frontmatter extraction for the od block
     const fmMatch = /^---\r?\n([\s\S]*?)\r?\n---/.exec(src);
     if (!fmMatch) { skipped++; continue; }
-    const fm = fmMatch[1];
+    const fm = fmMatch[1]!;
 
     // Parse od block (naive line scan — good enough for flat od keys)
     const odData: Record<string, unknown> = {};

@@ -7,6 +7,7 @@ import { PROTOCOL_VERSION } from '@open-design/contracts';
 import { detectAgents } from './agents.js';
 import { createScenarioRunner } from './orchestrator/runner.js';
 import { pptDesignScenario } from './scenarios/ppt-design/index.js';
+import { frontendDesignScenario } from './scenarios/frontend-design/index.js';
 import { createChatRunService } from './runs.js';
 import { readCurrentAppVersionInfo } from './app-version.js';
 import { openDatabase } from './db.js';
@@ -231,6 +232,7 @@ export async function startServer({ port = 7456, host = process.env.OD_BIND_HOST
     design,
     scenarioRunner,
     pptDesignScenario,
+    frontendDesignScenario,
   };
 
   app.use('/api', createProjectsRouter(ctx));

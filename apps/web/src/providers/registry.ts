@@ -2,6 +2,8 @@ import type {
   AgentInfo,
   AppVersionInfo,
   AppVersionResponse,
+  CapabilityDescriptorResponse,
+  CapabilitiesResponse,
   ChatAttachment,
   CodexPetSummary,
   CodexPetsResponse,
@@ -18,6 +20,8 @@ import type {
   PromptTemplateDetail,
   PromptTemplateSummary,
   ProjectFile,
+  ScenarioManifestResponse,
+  ScenariosResponse,
   SkillDetail,
   SkillSummary,
   UpdateDeployConfigRequest,
@@ -631,6 +635,28 @@ export async function fetchDesignSystemPreview(id: string): Promise<string | nul
     return await resp.text();
   } catch {
     return null;
+  }
+}
+
+export async function fetchCapabilities(): Promise<CapabilityDescriptorResponse[]> {
+  try {
+    const resp = await fetch('/api/v2/capabilities');
+    if (!resp.ok) return [];
+    const json = (await resp.json()) as CapabilitiesResponse;
+    return json.capabilities ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export async function fetchScenarios(): Promise<ScenarioManifestResponse[]> {
+  try {
+    const resp = await fetch('/api/v2/scenarios');
+    if (!resp.ok) return [];
+    const json = (await resp.json()) as ScenariosResponse;
+    return json.scenarios ?? [];
+  } catch {
+    return [];
   }
 }
 

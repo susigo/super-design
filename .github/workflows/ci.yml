@@ -48,6 +48,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Check architecture layers
+        run: pnpm lint:layers
+
+      - name: Check capability and scenario SemVer
+        run: pnpm check:capability-semver
+
       # `scripts/postinstall.mjs` only prebuilds package/tool entrypoints that
       # are needed immediately after install for linked bins and shared
       # sidecar/platform imports. It intentionally skips app outputs because

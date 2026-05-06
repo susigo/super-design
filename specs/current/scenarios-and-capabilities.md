@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Phase 0 ✅ landed (`51e5ae7`) · Phase 0.5 ✅ landed (`325197b`) · Phase 0.6 ✅ done · Phase 1 ✅ implemented · Phase 2 ✅ done · Phase 3 ✅ done · Phase 4 ⏳ next |
+| Status | Phase 0 ✅ landed (`51e5ae7`) · Phase 0.5 ✅ landed (`325197b`) · Phase 0.6 ✅ done · Phase 1 ✅ implemented · Phase 2 ✅ done · Phase 3 ✅ done · Phase 4 ✅ done · Phase 5 ✅ done |
 | Owner | architecture |
 | Last updated | 2026-05-06 |
 | Target form | Mac + Windows desktop product (Electron). No Linux / Docker / SaaS targets in scope. |
@@ -437,8 +437,8 @@ to its compile-time copy and flags an upgrade hint when they disagree
 | **1 — first capability** | Week 2 | ✅ implemented | `image-gen` impl extracted from `media.ts`; old shims still serve callers; invocations logged. |
 | **2 — first scenario** | Week 3 | ✅ **DONE** | `music-gen` extracted; `ppt-design` scenario routes through orchestrator; SKILL.md `capabilities_used` filled. |
 | **3 — split server.ts** | Week 4 | ✅ **DONE** | `apps/daemon/src/routes/*` carved out. No business changes. |
-| **4 — second scenario** | Week 5 | ⏳ pending | `frontend-design` scenario. UI consumes `/api/v2/scenarios` + `/api/v2/capabilities`. |
-| **5 — guardrails** | Week 6 | ⏳ pending | ESLint boundary rules; capability SemVer CI; docs update. |
+| **4 — second scenario** | Week 5 | ✅ **DONE** | `frontend-design` scenario. UI consumes `/api/v2/scenarios` + `/api/v2/capabilities`. |
+| **5 — guardrails** | Week 6 | ✅ **DONE** | ESLint boundary rules; capability/scenario SemVer guardrail; docs update. |
 
 Phase 0 is behavior-neutral; Phases 1–4 progressively replace flat
 files with the new layout while keeping callers working through shims.
@@ -565,24 +565,45 @@ manual review is a follow-up before activation.
 
 Acceptance: pure cosmetic refactor; no behavior changes; all tests green.
 
-### Phase 4 — second scenario + UI
+### Phase 4 — second scenario + UI — DONE
 
-- [ ] `frontend-design` scenario via the same shape as ppt-design
-- [ ] New routes:
+- [x] `frontend-design` scenario via the same shape as ppt-design
+      (`apps/daemon/src/scenarios/frontend-design/{index,prompt-templates,post-process}.ts`)
+- [x] New routes:
   - `GET /api/v2/capabilities` → list of capability descriptors
     (the `/api/capabilities` URL is already taken by the screenshot
     service from commit `5f17cce`; v2 prefix avoids collision)
   - `GET /api/v2/scenarios` → list of scenario manifests
-- [ ] Web consumes the two endpoints; renders provider pickers, cost
-      previews, and skill-greying based on `capabilities_used`
+- [x] Chat dispatch wired for both `ppt-design` and `frontend-design`
+      via `scenarioMap` lookup in `routes/chat.ts`
+- [x] Web consumes the two endpoints: `fetchCapabilities()` and
+      `fetchScenarios()` added to `apps/web/src/providers/registry.ts`;
+      contract types added to `packages/contracts/src/api/registry.ts`
+- [x] Tests: `frontend-design-scenario.test.ts` (11 tests) +
+      `v2-routes.test.ts` (2 tests); all pass
+- [x] `pnpm typecheck` green; `pnpm test` green (352 pass, 5 skipped)
 
-### Phase 5 — guardrails
+Acceptance: `frontend-design` scenario runs end-to-end in stub mode
+(writes `design.html`); both v2 endpoints return correct manifests and
+descriptors; web API client functions ready for UI consumption. UI
+rendering of provider pickers, cost previews, and skill-greying is a
+follow-up once UI components are designed.
 
-- [ ] ESLint `no-restricted-imports` rules enforcing §2's hard rules
-- [ ] CI step: `@arethetypeswrong/cli` (or equivalent) on capability
-      packages to catch breaking SemVer changes early
-- [ ] `docs/capabilities.md` and `docs/scenarios.md`: how to add a new
+### Phase 5 — guardrails — DONE
+
+- [x] ESLint `no-restricted-imports` rules enforcing §2's hard rules
+      (`eslint.config.mjs`, `pnpm lint:layers`)
+- [x] CI step: capability/scenario SemVer equivalent guardrail
+      (`scripts/check-capability-semver.ts`, `pnpm check:capability-semver`)
+- [x] `docs/capabilities.md` and `docs/scenarios.md`: how to add a new
       capability / scenario, step by step
+- [x] CI runs both guardrails before typecheck/test/build
+      (`.github/workflows/ci.yml`)
+
+Acceptance: layer violations fail through `pnpm lint:layers`; public
+source changes under `packages/capabilities/*` or `packages/scenarios/*`
+require a package version bump; contributor docs describe where contracts
+and daemon implementations belong.
 
 ---
 

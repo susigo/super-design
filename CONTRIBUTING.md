@@ -223,6 +223,18 @@ For step-by-step instructions on adding a new locale (UI dictionary, README, lan
 
 ---
 
+## Adding a new Capability or Scenario
+
+Capabilities and scenarios are the typed contract layer behind skills. Use them when a change adds a reusable model-powered building block or a product-level experience, not for ordinary skill metadata.
+
+A **Capability** lives in `packages/capabilities/<id>/` and owns only pure TypeScript input/output/cost contracts. Runtime implementation, provider SDKs, filesystem writes, SQLite, and cache logic belong in `apps/daemon/src/capabilities/<id>/`. Follow [`docs/capabilities.md`](docs/capabilities.md) when adding one.
+
+A **Scenario** lives in `packages/scenarios/<id>/` and publishes a manifest that declares required capabilities with SemVer ranges. Runtime orchestration, prompt templates, and post-processing belong in `apps/daemon/src/scenarios/<id>/`. Follow [`docs/scenarios.md`](docs/scenarios.md) when adding one.
+
+Before opening a PR that changes capability or scenario public source, run `pnpm lint:layers` and `pnpm check:capability-semver`. CI requires capability/scenario package versions to move when their public contract source changes.
+
+---
+
 ## Code style
 
 We're not pedantic about formatting (Prettier on save is fine), but two rules are non-negotiable because they show up in the prompt stack and the user-facing API:
