@@ -2,7 +2,6 @@
 import express from 'express';
 import { getProject } from '../db.js';
 import { generateMedia } from '../media.js';
-import { openaiSizeFor } from '../capabilities/image-gen/index.js';
 import {
   AUDIO_DURATIONS_SEC,
   AUDIO_MODELS_BY_KIND,
@@ -15,55 +14,16 @@ import {
 import { readMaskedConfig, writeConfig } from '../media-config.js';
 import { readAppConfig, writeAppConfig } from '../app-config.js';
 import { writeProjectFile } from '../projects/index.js';
-import { writeUsageLog } from '../billing/usage-log.js';
-import { imagePriceFor } from '../billing/pricing.js';
 import { isLocalSameOrigin, sendApiError } from './helpers.js';
+import {
+  appendTaskProgress,
+  createMediaTask,
+  getMediaTask,
+  listProjectMediaTasks,
+  notifyTaskWaiters,
+} from './media-tasks.js';
+import { recordImageUsageIfBillable } from './media-usage.js';
 
-const mediaTasks = new Map();
-const TASK_TTL_AFTER_DONE_MS = 10 * 60 * 1000;
-
-function createMediaTask(taskId, projectId, info = {}) {
-  const task = {
-    id: taskId,
-    projectId,
-    status: 'queued',
-    surface: info.surface,
-    model: info.model,
-    progress: [],
-    file: null,
-    error: null,
-    startedAt: Date.now(),
-    endedAt: null,
-    waiters: new Set(),
-  };
-  mediaTasks.set(taskId, task);
-  return task;
-}
-
-function appendTaskProgress(task, line) {
-  task.progress.push(line);
-  notifyTaskWaiters(task);
-}
-
-function notifyTaskWaiters(task) {
-  const wakers = Array.from(task.waiters);
-  for (const w of wakers) {
-    try {
-      w();
-    } catch {
-      // Never let one bad waiter block the rest.
-    }
-  }
-  if (
-    (task.status === 'done' || task.status === 'failed') &&
-    !task._gcScheduled
-  ) {
-    task._gcScheduled = true;
-    setTimeout(() => {
-      if (task.waiters.size === 0) mediaTasks.delete(task.id);
-    }, TASK_TTL_AFTER_DONE_MS).unref?.();
-  }
-}
 
 export function createMediaRouter(ctx): import("express").Router {
   const router = express.Router();
@@ -195,47 +155,18 @@ export function createMediaRouter(ctx): import("express").Router {
             `[task ${taskId.slice(0, 8)}] done size=${meta?.size} mime=${meta?.mime} ` +
               `elapsed=${Math.round((task.endedAt - task.startedAt) / 1000)}s`,
           );
-          // Record metering only on real-provider successes — stubs and
-          // provider failures should not be billed by the local price
-          // table. We trust meta.intentionalStub / usedStubFallback flags
-          // from generateMedia for that distinction.
-          if (
-            !meta?.intentionalStub &&
-            !meta?.usedStubFallback &&
-            meta?.surface &&
-            meta?.model
-          ) {
-            try {
-              const reqAspect =
-                typeof req.body?.aspect === 'string' ? req.body.aspect : null;
-              const sizeStr = openaiSizeFor(meta.model, reqAspect);
-              if (meta.surface === 'image') {
-                const cost = imagePriceFor(meta.model, sizeStr);
-                writeUsageLog(db, {
-                  ts: Date.now(),
-                  projectId,
-                  conversationId:
-                    typeof req.body?.conversationId === 'string'
-                      ? req.body.conversationId
-                      : null,
-                  messageId:
-                    typeof req.body?.messageId === 'string'
-                      ? req.body.messageId
-                      : null,
-                  surface: 'image',
-                  provider: meta.providerId || 'unknown',
-                  model: meta.model,
-                  imageCount: 1,
-                  imageSize: sizeStr,
-                  costUsdEstimate: cost,
-                  costSource:
-                    cost == null ? 'pricing-table-missing' : 'pricing-table',
-                });
-              }
-            } catch {
-              // metering must never break the user's flow
-            }
-          }
+          recordImageUsageIfBillable({
+            db,
+            meta,
+            projectId,
+            aspect: typeof req.body?.aspect === 'string' ? req.body.aspect : null,
+            conversationId:
+              typeof req.body?.conversationId === 'string'
+                ? req.body.conversationId
+                : null,
+            messageId:
+              typeof req.body?.messageId === 'string' ? req.body.messageId : null,
+          });
         })
         .catch((err) => {
           task.status = 'failed';
@@ -311,35 +242,13 @@ export function createMediaRouter(ctx): import("express").Router {
         prompt,
         aspect,
       });
-      // Per-call usage row — the same shape as the media-task path so
-      // downstream usage views aggregate consistently. Skip on stub /
-      // provider-error responses; users shouldn't see a price tag for
-      // bytes the provider didn't produce.
-      if (
-        !meta?.intentionalStub &&
-        !meta?.usedStubFallback &&
-        meta?.surface === 'image' &&
-        meta?.model
-      ) {
-        try {
-          const sizeStr = openaiSizeFor(meta.model, aspect);
-          const cost = imagePriceFor(meta.model, sizeStr);
-          writeUsageLog(db, {
-            ts: Date.now(),
-            projectId,
-            conversationId,
-            surface: 'image',
-            provider: meta.providerId || 'unknown',
-            model: meta.model,
-            imageCount: 1,
-            imageSize: sizeStr,
-            costUsdEstimate: cost,
-            costSource: cost == null ? 'pricing-table-missing' : 'pricing-table',
-          });
-        } catch {
-          /* metering must never break the user's flow */
-        }
-      }
+      recordImageUsageIfBillable({
+        db,
+        meta,
+        projectId,
+        aspect,
+        conversationId,
+      });
       return res.json({
         placeholderId,
         src: `/api/projects/${encodeURIComponent(projectId)}/raw/${encodeURIComponent(meta.name)}`,
@@ -397,7 +306,7 @@ export function createMediaRouter(ctx): import("express").Router {
       return res.status(403).json({ error: 'cross-origin request rejected' });
     }
     const taskId = req.params.id;
-    const task = mediaTasks.get(taskId);
+    const task = getMediaTask(taskId);
     if (!task) return res.status(404).json({ error: 'task not found' });
 
     const since = Number.isFinite(req.body?.since) ? Number(req.body.since) : 0;
@@ -449,27 +358,7 @@ export function createMediaRouter(ctx): import("express").Router {
     const projectId = req.params.id;
     const includeDone =
       req.query.includeDone === '1' || req.query.includeDone === 'true';
-    const tasks = [];
-    for (const t of mediaTasks.values()) {
-      if (t.projectId !== projectId) continue;
-      const isTerminal = t.status === 'done' || t.status === 'failed';
-      if (isTerminal && !includeDone) continue;
-      tasks.push({
-        taskId: t.id,
-        status: t.status,
-        startedAt: t.startedAt,
-        endedAt: t.endedAt,
-        elapsed: Math.round(((t.endedAt ?? Date.now()) - t.startedAt) / 1000),
-        surface: t.surface,
-        model: t.model,
-        progress: t.progress.slice(-3),
-        progressCount: t.progress.length,
-        ...(t.status === 'done' ? { file: t.file } : {}),
-        ...(t.status === 'failed' ? { error: t.error } : {}),
-      });
-    }
-    tasks.sort((a, b) => b.startedAt - a.startedAt);
-    res.json({ tasks });
+    res.json({ tasks: listProjectMediaTasks(projectId, { includeDone }) });
   });
 
   return router;
