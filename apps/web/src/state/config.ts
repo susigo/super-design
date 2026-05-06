@@ -1,4 +1,5 @@
 import type { AppConfigPrefs } from '@open-design/contracts';
+import { daemonJson, daemonOk } from '../client/daemon-client';
 import { isOpenAICompatible } from '../providers/openai-compatible';
 import type {
   ApiProtocol,
@@ -268,7 +269,7 @@ export async function syncMediaProvidersToDaemon(
 ): Promise<void> {
   if (!providers) return;
   try {
-    await fetch('/api/media/config', {
+    await daemonOk('/api/media/config', {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ providers, force: Boolean(options?.force) }),
@@ -280,9 +281,7 @@ export async function syncMediaProvidersToDaemon(
 
 export async function fetchDaemonConfig(): Promise<AppConfigPrefs | null> {
   try {
-    const res = await fetch('/api/app-config');
-    if (!res.ok) return null;
-    const data = await res.json();
+    const data = await daemonJson<{ config: AppConfigPrefs | null }>('/api/app-config');
     return data?.config ?? null;
   } catch {
     return null;
@@ -298,7 +297,7 @@ export async function syncConfigToDaemon(config: AppConfig): Promise<void> {
     designSystemId: config.designSystemId,
   };
   try {
-    await fetch('/api/app-config', {
+    await daemonOk('/api/app-config', {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(prefs),

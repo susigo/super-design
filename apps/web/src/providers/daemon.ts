@@ -9,6 +9,7 @@
  *   - 'stderr'  : incidental stderr. Shown only when the process exits
  *                 non-zero (tail appended to the error message).
  */
+import { DaemonRequestError, daemonJson, daemonOk, daemonSse } from '../client/daemon-client';
 import type { AgentEvent, ChatCommentAttachment, ChatMessage } from '../types';
 import type {
   ChatRunCreateResponse,
@@ -117,20 +118,11 @@ export async function streamViaDaemon({
   const body = JSON.stringify(request);
 
   try {
-    const createResp = await fetch('/api/runs', {
+    const created = await daemonJson<ChatRunCreateResponse>('/api/runs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body,
     });
-
-    if (!createResp.ok) {
-      const text = await createResp.text().catch(() => '');
-      onRunStatus?.('failed');
-      handlers.onError(new Error(`daemon ${createResp.status}: ${text || 'no body'}`));
-      return;
-    }
-
-    const created = (await createResp.json()) as ChatRunCreateResponse;
     const runId = created.runId;
     onRunCreated?.(runId);
     onRunStatus?.('queued');
@@ -146,7 +138,7 @@ export async function streamViaDaemon({
   } catch (err) {
     if ((err as Error).name === 'AbortError') return;
     onRunStatus?.('failed');
-    handlers.onError(err instanceof Error ? err : new Error(String(err)));
+    handlers.onError(toDaemonError(err));
   }
 }
 
@@ -156,9 +148,9 @@ export async function reattachDaemonRun(options: DaemonReattachOptions): Promise
 
 export async function fetchChatRunStatus(runId: string): Promise<ChatRunStatusResponse | null> {
   try {
-    const resp = await fetch(`/api/runs/${encodeURIComponent(runId)}`);
-    if (!resp.ok) return null;
-    return (await resp.json()) as ChatRunStatusResponse;
+    return await daemonJson<ChatRunStatusResponse>(
+      `/api/runs/${encodeURIComponent(runId)}`,
+    );
   } catch {
     return null;
   }
@@ -170,9 +162,7 @@ export async function listActiveChatRuns(
 ): Promise<ChatRunStatusResponse[]> {
   try {
     const qs = new URLSearchParams({ projectId, conversationId, status: 'active' });
-    const resp = await fetch(`/api/runs?${qs.toString()}`);
-    if (!resp.ok) return [];
-    const body = (await resp.json()) as ChatRunListResponse;
+    const body = await daemonJson<ChatRunListResponse>(`/api/runs?${qs.toString()}`);
     return body.runs ?? [];
   } catch {
     return [];
@@ -198,7 +188,7 @@ async function consumeDaemonRun({
   const cancelRun = () => {
     if (canceled) return;
     canceled = true;
-    void fetch(`/api/runs/${encodeURIComponent(runId)}/cancel`, { method: 'POST' }).catch(() => {});
+    void daemonOk(`/api/runs/${encodeURIComponent(runId)}/cancel`, { method: 'POST' }).catch(() => {});
   };
 
   cancelSignal?.addEventListener('abort', cancelRun, { once: true });
@@ -212,7 +202,7 @@ async function consumeDaemonRun({
       const qs = lastEventId ? `?after=${encodeURIComponent(lastEventId)}` : '';
       let resp: Response;
       try {
-        resp = await fetch(`/api/runs/${encodeURIComponent(runId)}/events${qs}`, {
+        resp = await daemonSse(`/api/runs/${encodeURIComponent(runId)}/events${qs}`, {
           method: 'GET',
           signal,
         });
@@ -341,6 +331,13 @@ function isChatRunStatus(value: unknown): value is ChatRunStatus {
   return value === 'queued' || value === 'running' || value === 'succeeded' || value === 'failed' || value === 'canceled';
 }
 
+function toDaemonError(err: unknown): Error {
+  if (err instanceof DaemonRequestError && err.error.status) {
+    return new Error(`daemon ${err.error.status}: ${err.error.message}`);
+  }
+  return err instanceof Error ? err : new Error(String(err));
+}
+
 // Translate a raw `agent` SSE payload (what apps/daemon/src/claude-stream.ts emits)
 // into the UI's AgentEvent union. Keep this liberal — unknown types just
 // return null so the UI ignores them instead of rendering garbage.
@@ -406,13 +403,11 @@ export async function saveArtifact(
   html: string,
 ): Promise<{ url: string; path: string } | null> {
   try {
-    const resp = await fetch('/api/artifacts/save', {
+    return await daemonJson<{ url: string; path: string }>('/api/artifacts/save', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ identifier, title, html }),
     });
-    if (!resp.ok) return null;
-    return (await resp.json()) as { url: string; path: string };
   } catch {
     return null;
   }

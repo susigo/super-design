@@ -1,7 +1,7 @@
 import { useT } from '../i18n';
-import type { PersistedAgentEvent } from '@open-design/contracts';
+import type { AgentEvent } from '../types';
 
-type FileChangedEvent = Extract<PersistedAgentEvent, { kind: 'file_changed' }>;
+type FileChangedEvent = Extract<AgentEvent, { kind: 'file_changed' }>;
 
 export function FileActivityPanel({ events }: { events: FileChangedEvent[] }) {
   const t = useT();

@@ -1,4 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  extractDesignSystemImport,
+  saveDesignSystemImport,
+  stageDesignSystemImport,
+  type StagedDesignSystemFile,
+} from '../providers/design-system-import';
 
 // "Sample importer" dialog. Lifecycle:
 //   idle → uploading → extracting → editable preview → saved/failed
@@ -19,13 +25,7 @@ interface Props {
 
 type Phase = 'idle' | 'uploading' | 'extracting' | 'preview' | 'saving';
 
-interface StagedFile {
-  stagingId: string;
-  kind: string;
-  mime: string;
-  size: number;
-  originalName?: string;
-}
+type StagedFile = StagedDesignSystemFile;
 
 export function ImportDesignSystemDialog({
   apiBaseUrl,
@@ -56,18 +56,7 @@ export function ImportDesignSystemDialog({
     setPhase('uploading');
     setError(null);
     try {
-      const fd = new FormData();
-      fd.append('file', file);
-      const res = await fetch('/api/design-systems/import/stage', {
-        method: 'POST',
-        body: fd,
-      });
-      if (!res.ok) {
-        const e = await res.json().catch(() => ({}));
-        throw new Error(e?.error || `HTTP ${res.status}`);
-      }
-      const data = (await res.json()) as StagedFile;
-      setStaged(data);
+      setStaged(await stageDesignSystemImport(file));
       setPhase('idle');
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -80,23 +69,14 @@ export function ImportDesignSystemDialog({
     setPhase('extracting');
     setError(null);
     try {
-      const res = await fetch('/api/design-systems/import/extract', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          stagingId: staged.stagingId,
-          baseUrl: apiBaseUrl,
-          apiKey,
-          model: apiModel,
-          protocol: apiProtocol,
-          hint: hint.trim() || undefined,
-        }),
+      const data = await extractDesignSystemImport({
+        stagingId: staged.stagingId,
+        baseUrl: apiBaseUrl,
+        apiKey,
+        model: apiModel,
+        protocol: apiProtocol,
+        hint: hint.trim() || undefined,
       });
-      if (!res.ok) {
-        const e = await res.json().catch(() => ({}));
-        throw new Error(e?.error || `HTTP ${res.status}`);
-      }
-      const data = (await res.json()) as { slug: string; body: string };
       setSlug(data.slug);
       setBody(data.body);
       setPhase('preview');
@@ -111,20 +91,7 @@ export function ImportDesignSystemDialog({
     setPhase('saving');
     setError(null);
     try {
-      const res = await fetch('/api/design-systems/import/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ slug: slug.trim(), body }),
-      });
-      if (!res.ok) {
-        const e = await res.json().catch(() => ({}));
-        throw new Error(e?.error || `HTTP ${res.status}`);
-      }
-      const data = (await res.json()) as {
-        ok: boolean;
-        system?: { id?: string };
-      };
-      const savedId = data?.system?.id || slug.trim();
+      const savedId = await saveDesignSystemImport({ slug: slug.trim(), body });
       onSaved(savedId);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));

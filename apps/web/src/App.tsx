@@ -1,13 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
-import { EntryView } from './components/EntryView';
 import type { CreateInput } from './components/NewProjectPanel';
-import { PetOverlay } from './components/pet/PetOverlay';
 import { migrateCustomPetAtlas } from './components/pet/pets';
-import { ProjectView } from './components/ProjectView';
-import {
-  SettingsDialog,
-  type SettingsSection,
-} from './components/SettingsDialog';
+import type { SettingsSection } from './components/SettingsDialog';
 import {
   daemonIsLive,
   fetchAppVersionInfo,
@@ -17,6 +11,7 @@ import {
   fetchSkills,
 } from './providers/registry';
 import { navigate, useRoute } from './router';
+import { DefaultAppShell } from './shells/DefaultAppShell';
 import {
   fetchDaemonConfig,
   DEFAULT_PET,
@@ -470,87 +465,55 @@ export function App() {
   }, [route.kind, refreshTemplates]);
 
   return (
-    <>
-      {activeProject ? (
-        <ProjectView
-          key={activeProject.id}
-          project={activeProject}
-          routeFileName={route.kind === 'project' ? route.fileName : null}
-          config={config}
-          agents={agents}
-          skills={skills}
-          designSystems={designSystems}
-          daemonLive={daemonLive}
-          onModeChange={handleModeChange}
-          onAgentChange={handleAgentChange}
-          onAgentModelChange={handleAgentModelChange}
-          onRefreshAgents={refreshAgents}
-          onOpenSettings={openSettings}
-          onAdoptPetInline={handleAdoptPet}
-          onTogglePet={handleTogglePet}
-          onOpenPetSettings={openPetSettings}
-          onBack={handleBack}
-          onClearPendingPrompt={handleClearPendingPrompt}
-          onTouchProject={handleTouchProject}
-          onProjectChange={handleProjectChange}
-          onProjectsRefresh={refreshProjects}
-        />
-      ) : (
-        <EntryView
-          skills={skills}
-          designSystems={designSystems}
-          projects={projects}
-          templates={templates}
-          promptTemplates={promptTemplates}
-          defaultDesignSystemId={config.designSystemId}
-          config={config}
-          agents={agents}
-          loading={bootstrapping}
-          onCreateProject={handleCreateProject}
-          onImportClaudeDesign={handleImportClaudeDesign}
-          onOpenProject={handleOpenProject}
-          onDeleteProject={handleDeleteProject}
-          onChangeDefaultDesignSystem={handleChangeDefaultDesignSystem}
-          onOpenSettings={openSettings}
-          onAdoptPet={openPetSettings}
-          onAdoptPetInline={handleAdoptPet}
-          onTogglePet={handleTogglePet}
-          onRefreshDesignSystems={async () => {
-            const next = await fetchDesignSystems();
-            setDesignSystems(next);
-          }}
-        />
-      )}
-      <PetOverlay
-        pet={config.pet?.enabled ? config.pet : undefined}
-        onTuck={handleTuckPet}
-        onOpenSettings={openPetSettings}
-      />
-      {settingsOpen ? (
-        <SettingsDialog
-          initial={config}
-          agents={agents}
-          daemonLive={daemonLive}
-          appVersionInfo={appVersionInfo}
-          welcome={settingsWelcome}
-          defaultSection={settingsSection}
-          onSave={handleConfigSave}
-          onClose={() => {
-            // Dismissing the welcome modal (Skip for now / backdrop click)
-            // also counts as onboarding-done; we don't want to keep
-            // re-prompting on every refresh just because the user opted
-            // not to save.
-            if (settingsWelcome && !config.onboardingCompleted) {
-              const next: AppConfig = { ...config, onboardingCompleted: true };
-              saveConfig(next);
-              void syncConfigToDaemon(next);
-              setConfig(next);
-            }
-            setSettingsOpen(false);
-          }}
-          onRefreshAgents={refreshAgents}
-        />
-      ) : null}
-    </>
+    <DefaultAppShell
+      activeProject={activeProject}
+      routeFileName={route.kind === 'project' ? route.fileName : null}
+      config={config}
+      agents={agents}
+      skills={skills}
+      designSystems={designSystems}
+      projects={projects}
+      templates={templates}
+      promptTemplates={promptTemplates}
+      daemonLive={daemonLive}
+      bootstrapping={bootstrapping}
+      appVersionInfo={appVersionInfo}
+      settingsOpen={settingsOpen}
+      settingsWelcome={settingsWelcome}
+      settingsSection={settingsSection}
+      onModeChange={handleModeChange}
+      onAgentChange={handleAgentChange}
+      onAgentModelChange={handleAgentModelChange}
+      onRefreshAgents={refreshAgents}
+      onOpenSettings={openSettings}
+      onOpenPetSettings={openPetSettings}
+      onAdoptPetInline={handleAdoptPet}
+      onTogglePet={handleTogglePet}
+      onTuckPet={handleTuckPet}
+      onBack={handleBack}
+      onClearPendingPrompt={handleClearPendingPrompt}
+      onTouchProject={handleTouchProject}
+      onProjectChange={handleProjectChange}
+      onProjectsRefresh={refreshProjects}
+      onCreateProject={handleCreateProject}
+      onImportClaudeDesign={handleImportClaudeDesign}
+      onOpenProject={handleOpenProject}
+      onDeleteProject={handleDeleteProject}
+      onChangeDefaultDesignSystem={handleChangeDefaultDesignSystem}
+      onRefreshDesignSystems={async () => {
+        const next = await fetchDesignSystems();
+        setDesignSystems(next);
+      }}
+      onSaveSettings={handleConfigSave}
+      onCloseSettings={() => {
+        if (settingsWelcome && !config.onboardingCompleted) {
+          const next: AppConfig = { ...config, onboardingCompleted: true };
+          saveConfig(next);
+          void syncConfigToDaemon(next);
+          setConfig(next);
+        }
+        setSettingsOpen(false);
+      }}
+    />
   );
 }

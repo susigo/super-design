@@ -1,3 +1,4 @@
+import { daemonSse } from '../client/daemon-client';
 import { effectiveMaxTokens } from '../state/maxTokens';
 import type { AppConfig, ChatMessage } from '../types';
 import type { StreamHandlers } from './anthropic';
@@ -18,7 +19,7 @@ export async function streamMessageAnthropicProxy(
   let acc = '';
 
   try {
-    const resp = await fetch('/api/proxy/anthropic/stream', {
+    const resp = await daemonSse('/api/proxy/anthropic/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -32,9 +33,8 @@ export async function streamMessageAnthropicProxy(
       signal,
     });
 
-    if (!resp.ok || !resp.body) {
-      const text = await resp.text().catch(() => '');
-      handlers.onError(new Error(`proxy ${resp.status}: ${text || 'no body'}`));
+    if (!resp.body) {
+      handlers.onError(new Error('proxy stream returned no body'));
       return;
     }
 

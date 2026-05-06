@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useT } from '../i18n';
-import type { PersistedAgentEvent } from '@open-design/contracts';
+import type { AgentEvent } from '../types';
 
-type ScreenshotEvent = Extract<PersistedAgentEvent, { kind: 'screenshot' }>;
+type ScreenshotEvent = Extract<AgentEvent, { kind: 'screenshot' }>;
 
 export function ScreenshotStrip({ items }: { items: ScreenshotEvent[] }) {
   const t = useT();

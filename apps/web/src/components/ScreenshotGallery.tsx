@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useT } from '../i18n';
-import type { ScreenshotEntry } from '@open-design/contracts';
+import {
+  captureProjectScreenshot,
+  fetchProjectScreenshots,
+  type ScreenshotEntry,
+} from '../providers/screenshots';
 
 interface Props {
   projectId: string;
@@ -18,11 +22,7 @@ export function ScreenshotGallery({ projectId, onAnnotate }: Props) {
   const fetchScreenshots = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/projects/${projectId}/screenshots`);
-      if (res.ok) {
-        const data = await res.json();
-        setScreenshots(data.screenshots ?? []);
-      }
+      setScreenshots(await fetchProjectScreenshots(projectId));
     } catch {
       // ignore
     } finally {
@@ -37,14 +37,8 @@ export function ScreenshotGallery({ projectId, onAnnotate }: Props) {
   const captureNew = async () => {
     setCapturing(true);
     try {
-      const res = await fetch(`/api/projects/${projectId}/screenshots`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-      });
-      if (res.ok) {
-        await fetchScreenshots();
-      }
+      await captureProjectScreenshot(projectId);
+      await fetchScreenshots();
     } catch {
       // ignore
     } finally {

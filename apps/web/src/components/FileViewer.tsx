@@ -1761,13 +1761,7 @@ async function fetchProjectRelativeText(
 ): Promise<string | null> {
   const filePath = resolveProjectRelativePath(ownerFileName, assetRef);
   if (!filePath) return null;
-  try {
-    const resp = await fetch(projectRawUrl(projectId, filePath));
-    if (!resp.ok) return null;
-    return await resp.text();
-  } catch {
-    return null;
-  }
+  return await fetchProjectFileText(projectId, filePath);
 }
 
 function resolveProjectRelativePath(ownerFileName: string, assetRef: string): string | null {

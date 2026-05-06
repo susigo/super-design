@@ -1,4 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  fetchDeckImagePromptTemplates,
+  generateDeckImage,
+  type DeckImagePromptTemplate,
+} from '../providers/deck-images';
 
 // Side panel for the deck preview that lets users fill in
 // `<img data-od-image-prompt="…" data-od-image-id="…">` placeholders
@@ -19,12 +24,7 @@ interface Placeholder {
   error?: string;
 }
 
-interface PromptTemplate {
-  id: string;
-  name: string;
-  prompt: string;
-  group: string;
-}
+type PromptTemplate = DeckImagePromptTemplate;
 
 interface Props {
   source: string;
@@ -54,18 +54,10 @@ export function DeckImagePanel({
   useEffect(() => {
     let cancelled = false;
     setLoadingTemplates(true);
-    fetch('/api/prompt-templates?surface=image')
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-      .then((data) => {
+    fetchDeckImagePromptTemplates()
+      .then((list) => {
         if (cancelled) return;
-        const list = Array.isArray(data?.templates)
-          ? data.templates
-          : Array.isArray(data?.items)
-            ? data.items
-            : Array.isArray(data)
-              ? data
-              : [];
-        setPrompts(list.map(normalizeTemplate).filter(Boolean) as PromptTemplate[]);
+        setPrompts(list);
       })
       .catch(() => setPrompts([]))
       .finally(() => {
@@ -107,32 +99,19 @@ export function DeckImagePanel({
       const ctrl = new AbortController();
       const timeout = window.setTimeout(() => ctrl.abort(), 90_000);
       try {
-        const res = await fetch(
-          `/api/projects/${encodeURIComponent(projectId)}/deck/image`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              placeholderId: placeholder.id,
-              prompt: placeholder.prompt,
-              aspect: placeholder.aspect,
-              conversationId,
-            }),
-            signal: ctrl.signal,
-          },
-        );
-        if (!res.ok) {
-          const errBody = await res.json().catch(() => ({}));
-          const msg =
-            (errBody && (errBody.error || errBody.message)) || `HTTP ${res.status}`;
-          throw new Error(typeof msg === 'string' ? msg : String(msg));
-        }
-        const data = (await res.json()) as { src: string };
-        const patched = patchSourceImage(source, placeholder.id, data.src);
+        const src = await generateDeckImage({
+          projectId,
+          placeholderId: placeholder.id,
+          prompt: placeholder.prompt,
+          aspect: placeholder.aspect,
+          conversationId,
+          signal: ctrl.signal,
+        });
+        const patched = patchSourceImage(source, placeholder.id, src);
         onPatched(patched);
         updatePlaceholder(placeholder.id, {
           status: 'done',
-          currentSrc: data.src,
+          currentSrc: src,
         });
       } catch (err) {
         const aborted =

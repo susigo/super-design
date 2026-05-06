@@ -5,6 +5,7 @@
 // These helpers fail soft (returning null / [] on transport errors) so
 // the UI can stay rendered when the daemon is briefly unreachable.
 
+import { daemonJson, daemonOk } from '../client/daemon-client';
 import type {
   ChatMessage,
   Conversation,
@@ -16,9 +17,7 @@ import type {
 
 export async function listProjects(): Promise<Project[]> {
   try {
-    const resp = await fetch('/api/projects');
-    if (!resp.ok) return [];
-    const json = (await resp.json()) as { projects: Project[] };
+    const json = await daemonJson<{ projects: Project[] }>('/api/projects');
     return json.projects ?? [];
   } catch {
     return [];
@@ -27,9 +26,9 @@ export async function listProjects(): Promise<Project[]> {
 
 export async function getProject(id: string): Promise<Project | null> {
   try {
-    const resp = await fetch(`/api/projects/${encodeURIComponent(id)}`);
-    if (!resp.ok) return null;
-    const json = (await resp.json()) as { project: Project };
+    const json = await daemonJson<{ project: Project }>(
+      `/api/projects/${encodeURIComponent(id)}`,
+    );
     return json.project;
   } catch {
     return null;
@@ -45,13 +44,14 @@ export async function createProject(input: {
 }): Promise<{ project: Project; conversationId: string } | null> {
   try {
     const id = crypto.randomUUID();
-    const resp = await fetch('/api/projects', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, ...input }),
-    });
-    if (!resp.ok) return null;
-    return (await resp.json()) as { project: Project; conversationId: string };
+    return await daemonJson<{ project: Project; conversationId: string }>(
+      '/api/projects',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, ...input }),
+      },
+    );
   } catch {
     return null;
   }
@@ -63,16 +63,14 @@ export async function importClaudeDesignZip(
   try {
     const form = new FormData();
     form.append('file', file);
-    const resp = await fetch('/api/import/claude-design', {
-      method: 'POST',
-      body: form,
-    });
-    if (!resp.ok) return null;
-    return (await resp.json()) as {
+    return await daemonJson<{
       project: Project;
       conversationId: string;
       entryFile: string;
-    };
+    }>('/api/import/claude-design', {
+      method: 'POST',
+      body: form,
+    });
   } catch {
     return null;
   }
@@ -82,9 +80,7 @@ export async function importClaudeDesignZip(
 
 export async function listTemplates(): Promise<ProjectTemplate[]> {
   try {
-    const resp = await fetch('/api/templates');
-    if (!resp.ok) return [];
-    const json = (await resp.json()) as { templates: ProjectTemplate[] };
+    const json = await daemonJson<{ templates: ProjectTemplate[] }>('/api/templates');
     return json.templates ?? [];
   } catch {
     return [];
@@ -93,9 +89,9 @@ export async function listTemplates(): Promise<ProjectTemplate[]> {
 
 export async function getTemplate(id: string): Promise<ProjectTemplate | null> {
   try {
-    const resp = await fetch(`/api/templates/${encodeURIComponent(id)}`);
-    if (!resp.ok) return null;
-    const json = (await resp.json()) as { template: ProjectTemplate };
+    const json = await daemonJson<{ template: ProjectTemplate }>(
+      `/api/templates/${encodeURIComponent(id)}`,
+    );
     return json.template;
   } catch {
     return null;
@@ -108,13 +104,11 @@ export async function saveTemplate(input: {
   sourceProjectId: string;
 }): Promise<ProjectTemplate | null> {
   try {
-    const resp = await fetch('/api/templates', {
+    const json = await daemonJson<{ template: ProjectTemplate }>('/api/templates', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(input),
     });
-    if (!resp.ok) return null;
-    const json = (await resp.json()) as { template: ProjectTemplate };
     return json.template;
   } catch {
     return null;
@@ -123,10 +117,9 @@ export async function saveTemplate(input: {
 
 export async function deleteTemplate(id: string): Promise<boolean> {
   try {
-    const resp = await fetch(`/api/templates/${encodeURIComponent(id)}`, {
+    return await daemonOk(`/api/templates/${encodeURIComponent(id)}`, {
       method: 'DELETE',
     });
-    return resp.ok;
   } catch {
     return false;
   }
@@ -137,13 +130,14 @@ export async function patchProject(
   patch: Partial<Project>,
 ): Promise<Project | null> {
   try {
-    const resp = await fetch(`/api/projects/${encodeURIComponent(id)}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(patch),
-    });
-    if (!resp.ok) return null;
-    const json = (await resp.json()) as { project: Project };
+    const json = await daemonJson<{ project: Project }>(
+      `/api/projects/${encodeURIComponent(id)}`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      },
+    );
     return json.project;
   } catch {
     return null;
@@ -152,10 +146,9 @@ export async function patchProject(
 
 export async function deleteProject(id: string): Promise<boolean> {
   try {
-    const resp = await fetch(`/api/projects/${encodeURIComponent(id)}`, {
+    return await daemonOk(`/api/projects/${encodeURIComponent(id)}`, {
       method: 'DELETE',
     });
-    return resp.ok;
   } catch {
     return false;
   }
@@ -167,11 +160,9 @@ export async function listConversations(
   projectId: string,
 ): Promise<Conversation[]> {
   try {
-    const resp = await fetch(
+    const json = await daemonJson<{ conversations: Conversation[] }>(
       `/api/projects/${encodeURIComponent(projectId)}/conversations`,
     );
-    if (!resp.ok) return [];
-    const json = (await resp.json()) as { conversations: Conversation[] };
     return json.conversations ?? [];
   } catch {
     return [];
@@ -183,7 +174,7 @@ export async function createConversation(
   title?: string,
 ): Promise<Conversation | null> {
   try {
-    const resp = await fetch(
+    const json = await daemonJson<{ conversation: Conversation }>(
       `/api/projects/${encodeURIComponent(projectId)}/conversations`,
       {
         method: 'POST',
@@ -191,8 +182,6 @@ export async function createConversation(
         body: JSON.stringify({ title }),
       },
     );
-    if (!resp.ok) return null;
-    const json = (await resp.json()) as { conversation: Conversation };
     return json.conversation;
   } catch {
     return null;
@@ -205,7 +194,7 @@ export async function patchConversation(
   patch: Partial<Conversation>,
 ): Promise<Conversation | null> {
   try {
-    const resp = await fetch(
+    const json = await daemonJson<{ conversation: Conversation }>(
       `/api/projects/${encodeURIComponent(projectId)}/conversations/${encodeURIComponent(conversationId)}`,
       {
         method: 'PATCH',
@@ -213,8 +202,6 @@ export async function patchConversation(
         body: JSON.stringify(patch),
       },
     );
-    if (!resp.ok) return null;
-    const json = (await resp.json()) as { conversation: Conversation };
     return json.conversation;
   } catch {
     return null;
@@ -226,11 +213,10 @@ export async function deleteConversation(
   conversationId: string,
 ): Promise<boolean> {
   try {
-    const resp = await fetch(
+    return await daemonOk(
       `/api/projects/${encodeURIComponent(projectId)}/conversations/${encodeURIComponent(conversationId)}`,
       { method: 'DELETE' },
     );
-    return resp.ok;
   } catch {
     return false;
   }
@@ -243,11 +229,9 @@ export async function listMessages(
   conversationId: string,
 ): Promise<ChatMessage[]> {
   try {
-    const resp = await fetch(
+    const json = await daemonJson<{ messages: ChatMessage[] }>(
       `/api/projects/${encodeURIComponent(projectId)}/conversations/${encodeURIComponent(conversationId)}/messages`,
     );
-    if (!resp.ok) return [];
-    const json = (await resp.json()) as { messages: ChatMessage[] };
     return json.messages ?? [];
   } catch {
     return [];
@@ -260,7 +244,7 @@ export async function saveMessage(
   message: ChatMessage,
 ): Promise<void> {
   try {
-    await fetch(
+    await daemonOk(
       `/api/projects/${encodeURIComponent(projectId)}/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(message.id)}`,
       {
         method: 'PUT',
@@ -277,11 +261,9 @@ export async function saveMessage(
 
 export async function loadTabs(projectId: string): Promise<OpenTabsState> {
   try {
-    const resp = await fetch(
+    return await daemonJson<OpenTabsState>(
       `/api/projects/${encodeURIComponent(projectId)}/tabs`,
     );
-    if (!resp.ok) return { tabs: [], active: null };
-    return (await resp.json()) as OpenTabsState;
   } catch {
     return { tabs: [], active: null };
   }
@@ -292,7 +274,7 @@ export async function saveTabs(
   state: OpenTabsState,
 ): Promise<void> {
   try {
-    await fetch(`/api/projects/${encodeURIComponent(projectId)}/tabs`, {
+    await daemonOk(`/api/projects/${encodeURIComponent(projectId)}/tabs`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(state),

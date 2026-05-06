@@ -11,6 +11,14 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import {
+  clearUsage,
+  fetchRecentUsage,
+  fetchUsageSummary,
+  type UsagePeriod,
+  type UsageRecentRow,
+  type UsageSummary,
+} from '../providers/usage';
 
 // Transparent BYOK metering view. Reads from /api/usage/* on the
 // daemon and renders three views:
@@ -22,34 +30,10 @@ import {
 // usage_logs); no data leaves the user's machine. The daemon writes
 // rows as a side-effect of chat/proxy/media calls — see usage-log.ts.
 
-type Period = '7d' | '30d' | 'all';
-
-interface UsageSummary {
-  period: string;
-  daily: Array<{ date: string; calls: number; costUsd: number }>;
-  bySurface: Record<string, { count: number; costUsd: number }>;
-  byProvider: Record<string, { count: number; costUsd: number }>;
-  total: { count: number; costUsd: number };
-}
-
-interface UsageRecentRow {
-  id: string;
-  ts: number;
-  surface: string;
-  provider: string;
-  model: string;
-  inputTokens: number | null;
-  outputTokens: number | null;
-  imageCount: number | null;
-  costUsd: number | null;
-  costSource: string;
-  projectId: string | null;
-}
-
 const PIE_COLORS = ['#5b8dff', '#22c8a0', '#ffba6b', '#ff6b8a', '#a78bff'];
 
 export function UsageTab() {
-  const [period, setPeriod] = useState<Period>('30d');
+  const [period, setUsagePeriod] = useState<UsagePeriod>('30d');
   const [summary, setSummary] = useState<UsageSummary | null>(null);
   const [recent, setRecent] = useState<UsageRecentRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -60,16 +44,12 @@ export function UsageTab() {
     setLoading(true);
     setError(null);
     try {
-      const [summaryRes, recentRes] = await Promise.all([
-        fetch(`/api/usage/summary?period=${period}`),
-        fetch(`/api/usage/recent?limit=50`),
+      const [summaryData, recentRows] = await Promise.all([
+        fetchUsageSummary(period),
+        fetchRecentUsage(50),
       ]);
-      if (!summaryRes.ok) throw new Error(`summary ${summaryRes.status}`);
-      if (!recentRes.ok) throw new Error(`recent ${recentRes.status}`);
-      const summaryData = (await summaryRes.json()) as UsageSummary;
-      const recentData = (await recentRes.json()) as { rows: UsageRecentRow[] };
       setSummary(summaryData);
-      setRecent(Array.isArray(recentData.rows) ? recentData.rows : []);
+      setRecent(recentRows);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -99,8 +79,7 @@ export function UsageTab() {
     if (!window.confirm('清空所有用量历史?此操作不可撤销。')) return;
     setClearing(true);
     try {
-      const res = await fetch('/api/usage', { method: 'DELETE' });
-      if (!res.ok) throw new Error(`clear ${res.status}`);
+      await clearUsage();
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -123,7 +102,7 @@ export function UsageTab() {
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <select
             value={period}
-            onChange={(e) => setPeriod(e.target.value as Period)}
+            onChange={(e) => setUsagePeriod(e.target.value as UsagePeriod)}
             className="settings-select"
             aria-label="Time range"
           >

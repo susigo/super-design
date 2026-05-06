@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useT } from '../i18n';
 import type { DesignSystemSummary, Project, ProjectDisplayStatus, SkillSummary } from '../types';
+import { toProjectListViewModel } from '../view-models/project';
 import { Icon } from './Icon';
 
 type SubTab = 'recent' | 'yours';
@@ -60,15 +61,20 @@ export function DesignsTab({ projects, skills, designSystems, onOpen, onDelete }
     } catch {}
   }, [view]);
 
+  const projectListVm = useMemo(
+    () => toProjectListViewModel(projects),
+    [projects],
+  );
+
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();
-    let list = projects;
+    let list = projectListVm.projects;
     if (sub === 'recent') {
       list = [...list].sort((a, b) => b.updatedAt - a.updatedAt);
     }
     if (!q) return list;
     return list.filter((p) => p.name.toLowerCase().includes(q));
-  }, [projects, filter, sub]);
+  }, [projectListVm.projects, filter, sub]);
 
   const skillName = (id: string | null) => skills.find((s) => s.id === id)?.name ?? '';
   const dsName = (id: string | null) => designSystems.find((d) => d.id === id)?.title ?? '';

@@ -1,3 +1,4 @@
+import { daemonJson, daemonOk, daemonText, DaemonRequestError } from '../client/daemon-client';
 import type {
   AgentInfo,
   AppVersionInfo,
@@ -30,9 +31,7 @@ import type { ArtifactManifest } from '../artifacts/types';
 
 export async function fetchAgents(): Promise<AgentInfo[]> {
   try {
-    const resp = await fetch('/api/agents');
-    if (!resp.ok) return [];
-    const json = (await resp.json()) as { agents: AgentInfo[] };
+    const json = await daemonJson<{ agents: AgentInfo[] }>('/api/agents');
     return json.agents ?? [];
   } catch {
     return [];
@@ -41,9 +40,7 @@ export async function fetchAgents(): Promise<AgentInfo[]> {
 
 export async function fetchSkills(): Promise<SkillSummary[]> {
   try {
-    const resp = await fetch('/api/skills');
-    if (!resp.ok) return [];
-    const json = (await resp.json()) as { skills: SkillSummary[] };
+    const json = await daemonJson<{ skills: SkillSummary[] }>('/api/skills');
     return json.skills ?? [];
   } catch {
     return [];
@@ -57,9 +54,7 @@ export async function fetchSkills(): Promise<SkillSummary[]> {
 // empty state.
 export async function fetchCodexPets(): Promise<CodexPetsResponse> {
   try {
-    const resp = await fetch('/api/codex-pets');
-    if (!resp.ok) return { pets: [], rootDir: '' };
-    return (await resp.json()) as CodexPetsResponse;
+    return await daemonJson<CodexPetsResponse>('/api/codex-pets');
   } catch {
     return { pets: [], rootDir: '' };
   }
@@ -73,26 +68,14 @@ export async function syncCommunityPets(
   input?: SyncCommunityPetsRequest,
 ): Promise<SyncCommunityPetsResponse & { error?: string }> {
   try {
-    const resp = await fetch('/api/codex-pets/sync', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(input ?? {}),
-    });
-    if (!resp.ok) {
-      const payload = (await resp.json().catch(() => null)) as
-        | { error?: string }
-        | null;
-      return {
-        wrote: 0,
-        skipped: 0,
-        failed: 0,
-        total: 0,
-        rootDir: '',
-        errors: [],
-        error: payload?.error ?? `Sync failed (${resp.status})`,
-      };
-    }
-    return (await resp.json()) as SyncCommunityPetsResponse;
+    return await daemonJson<SyncCommunityPetsResponse & { error?: string }>(
+      '/api/codex-pets/sync',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(input ?? {}),
+      },
+    );
   } catch (err) {
     return {
       wrote: 0,
@@ -115,9 +98,7 @@ export function codexPetSpritesheetUrl(pet: CodexPetSummary): string {
 
 export async function fetchSkill(id: string): Promise<SkillDetail | null> {
   try {
-    const resp = await fetch(`/api/skills/${encodeURIComponent(id)}`);
-    if (!resp.ok) return null;
-    return (await resp.json()) as SkillDetail;
+    return await daemonJson<SkillDetail>(`/api/skills/${encodeURIComponent(id)}`);
   } catch {
     return null;
   }
@@ -125,9 +106,7 @@ export async function fetchSkill(id: string): Promise<SkillDetail | null> {
 
 export async function fetchDesignSystems(): Promise<DesignSystemSummary[]> {
   try {
-    const resp = await fetch('/api/design-systems');
-    if (!resp.ok) return [];
-    const json = (await resp.json()) as { designSystems: DesignSystemSummary[] };
+    const json = await daemonJson<{ designSystems: DesignSystemSummary[] }>('/api/design-systems');
     return json.designSystems ?? [];
   } catch {
     return [];
@@ -136,9 +115,9 @@ export async function fetchDesignSystems(): Promise<DesignSystemSummary[]> {
 
 export async function fetchDesignSystem(id: string): Promise<DesignSystemDetail | null> {
   try {
-    const resp = await fetch(`/api/design-systems/${encodeURIComponent(id)}`);
-    if (!resp.ok) return null;
-    return (await resp.json()) as DesignSystemDetail;
+    return await daemonJson<DesignSystemDetail>(
+      `/api/design-systems/${encodeURIComponent(id)}`,
+    );
   } catch {
     return null;
   }
@@ -146,9 +125,7 @@ export async function fetchDesignSystem(id: string): Promise<DesignSystemDetail 
 
 export async function fetchPromptTemplates(): Promise<PromptTemplateSummary[]> {
   try {
-    const resp = await fetch('/api/prompt-templates');
-    if (!resp.ok) return [];
-    const json = (await resp.json()) as { promptTemplates: PromptTemplateSummary[] };
+    const json = await daemonJson<{ promptTemplates: PromptTemplateSummary[] }>('/api/prompt-templates');
     return json.promptTemplates ?? [];
   } catch {
     return [];
@@ -160,11 +137,9 @@ export async function fetchPromptTemplate(
   id: string,
 ): Promise<PromptTemplateDetail | null> {
   try {
-    const resp = await fetch(
+    const json = await daemonJson<{ promptTemplate: PromptTemplateDetail }>(
       `/api/prompt-templates/${encodeURIComponent(surface)}/${encodeURIComponent(id)}`,
     );
-    if (!resp.ok) return null;
-    const json = (await resp.json()) as { promptTemplate: PromptTemplateDetail };
     return json.promptTemplate ?? null;
   } catch {
     return null;
@@ -173,8 +148,7 @@ export async function fetchPromptTemplate(
 
 export async function daemonIsLive(): Promise<boolean> {
   try {
-    const resp = await fetch('/api/health');
-    return resp.ok;
+    return await daemonOk('/api/health');
   } catch {
     return false;
   }
@@ -194,9 +168,7 @@ function isAppVersionInfo(value: unknown): value is AppVersionInfo {
 
 export async function fetchAppVersionInfo(): Promise<AppVersionInfo | null> {
   try {
-    const resp = await fetch('/api/version');
-    if (!resp.ok) return null;
-    const json = (await resp.json()) as Partial<AppVersionResponse>;
+    const json = await daemonJson<Partial<AppVersionResponse>>('/api/version');
     return isAppVersionInfo(json.version) ? json.version : null;
   } catch {
     return null;
@@ -205,9 +177,7 @@ export async function fetchAppVersionInfo(): Promise<AppVersionInfo | null> {
 
 export async function fetchSkillExample(id: string): Promise<string | null> {
   try {
-    const resp = await fetch(`/api/skills/${encodeURIComponent(id)}/example`);
-    if (!resp.ok) return null;
-    return await resp.text();
+    return await daemonText(`/api/skills/${encodeURIComponent(id)}/example`);
   } catch {
     return null;
   }
@@ -215,9 +185,7 @@ export async function fetchSkillExample(id: string): Promise<string | null> {
 
 export async function fetchDeployConfig(): Promise<DeployConfigResponse | null> {
   try {
-    const resp = await fetch('/api/deploy/config');
-    if (!resp.ok) return null;
-    return (await resp.json()) as DeployConfigResponse;
+    return await daemonJson<DeployConfigResponse>('/api/deploy/config');
   } catch {
     return null;
   }
@@ -227,13 +195,11 @@ export async function updateDeployConfig(
   input: UpdateDeployConfigRequest,
 ): Promise<DeployConfigResponse | null> {
   try {
-    const resp = await fetch('/api/deploy/config', {
+    return await daemonJson<DeployConfigResponse>('/api/deploy/config', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(input),
     });
-    if (!resp.ok) return null;
-    return (await resp.json()) as DeployConfigResponse;
   } catch {
     return null;
   }
@@ -243,9 +209,9 @@ export async function fetchProjectDeployments(
   projectId: string,
 ): Promise<ProjectDeploymentsResponse['deployments']> {
   try {
-    const resp = await fetch(`/api/projects/${encodeURIComponent(projectId)}/deployments`);
-    if (!resp.ok) return [];
-    const json = (await resp.json()) as ProjectDeploymentsResponse;
+    const json = await daemonJson<ProjectDeploymentsResponse>(
+      `/api/projects/${encodeURIComponent(projectId)}/deployments`,
+    );
     return json.deployments ?? [];
   } catch {
     return [];
@@ -256,44 +222,33 @@ export async function deployProjectFile(
   projectId: string,
   fileName: string,
 ): Promise<DeployProjectFileResponse> {
-  const resp = await fetch(`/api/projects/${encodeURIComponent(projectId)}/deploy`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ fileName, providerId: 'vercel-self' }),
-  });
-  if (!resp.ok) {
-    const payload = (await resp.json().catch(() => null)) as
-      | { error?: { message?: string }; message?: string }
-      | null;
-    throw new Error(payload?.error?.message || payload?.message || `Deploy failed (${resp.status})`);
-  }
-  return (await resp.json()) as DeployProjectFileResponse;
+  return await daemonJson<DeployProjectFileResponse>(
+    `/api/projects/${encodeURIComponent(projectId)}/deploy`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fileName, providerId: 'vercel-self' }),
+    },
+  );
 }
 
 export async function checkDeploymentLink(
   projectId: string,
   deploymentId: string,
 ): Promise<DeployProjectFileResponse> {
-  const resp = await fetch(
+  return await daemonJson<DeployProjectFileResponse>(
     `/api/projects/${encodeURIComponent(projectId)}/deployments/${encodeURIComponent(deploymentId)}/check-link`,
     { method: 'POST' },
   );
-  if (!resp.ok) {
-    const payload = (await resp.json().catch(() => null)) as
-      | { error?: { message?: string }; message?: string }
-      | null;
-    throw new Error(payload?.error?.message || payload?.message || `Link check failed (${resp.status})`);
-  }
-  return (await resp.json()) as DeployProjectFileResponse;
 }
 
 // Project files — all paths are scoped under .od/projects/<id>/ on disk.
 
 export async function fetchProjectFiles(projectId: string): Promise<ProjectFile[]> {
   try {
-    const resp = await fetch(`/api/projects/${encodeURIComponent(projectId)}/files`);
-    if (!resp.ok) return [];
-    const json = (await resp.json()) as { files: ProjectFile[] };
+    const json = await daemonJson<{ files: ProjectFile[] }>(
+      `/api/projects/${encodeURIComponent(projectId)}/files`,
+    );
     return json.files ?? [];
   } catch {
     return [];
@@ -320,11 +275,9 @@ export async function fetchProjectFilePreview(
   name: string,
 ): Promise<ProjectFilePreview | null> {
   try {
-    const resp = await fetch(
+    return await daemonJson<ProjectFilePreview>(
       `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(name)}/preview`,
     );
-    if (!resp.ok) return null;
-    return (await resp.json()) as ProjectFilePreview;
   } catch {
     return null;
   }
@@ -345,27 +298,22 @@ export async function fetchProjectFileText(
   if (options?.cache) init.cache = options.cache;
 
   try {
-    const resp = await fetch(requestUrl, init);
-    if (!resp.ok) {
-      console.warn('[fetchProjectFileText] failed:', {
-        name,
-        projectId,
-        status: resp.status,
-        statusText: resp.statusText,
-        url: requestUrl,
-      });
-      return null;
-    }
-    return await resp.text();
+    return await daemonText(requestUrl, init);
   } catch (err) {
+    const status = err instanceof DaemonRequestError ? err.error.status : undefined;
     console.warn('[fetchProjectFileText] failed:', {
-      error: err,
+      ...(status === undefined ? { error: err } : {}),
       name,
       projectId,
+      ...(status === undefined ? {} : { status, statusText: statusTextFor(status) }),
       url: requestUrl,
     });
     return null;
   }
+}
+
+function statusTextFor(status: number): string {
+  return status === 404 ? 'Not Found' : '';
 }
 
 export async function fetchPreviewComments(
@@ -373,11 +321,9 @@ export async function fetchPreviewComments(
   conversationId: string,
 ): Promise<PreviewComment[]> {
   try {
-    const resp = await fetch(
+    const json = await daemonJson<{ comments: PreviewComment[] }>(
       `/api/projects/${encodeURIComponent(projectId)}/conversations/${encodeURIComponent(conversationId)}/comments`,
     );
-    if (!resp.ok) return [];
-    const json = (await resp.json()) as { comments: PreviewComment[] };
     return json.comments ?? [];
   } catch {
     return [];
@@ -390,7 +336,7 @@ export async function upsertPreviewComment(
   input: PreviewCommentUpsertRequest,
 ): Promise<PreviewComment | null> {
   try {
-    const resp = await fetch(
+    const json = await daemonJson<{ comment: PreviewComment }>(
       `/api/projects/${encodeURIComponent(projectId)}/conversations/${encodeURIComponent(conversationId)}/comments`,
       {
         method: 'POST',
@@ -398,8 +344,6 @@ export async function upsertPreviewComment(
         body: JSON.stringify(input),
       },
     );
-    if (!resp.ok) return null;
-    const json = (await resp.json()) as { comment: PreviewComment };
     return json.comment ?? null;
   } catch {
     return null;
@@ -413,7 +357,7 @@ export async function patchPreviewCommentStatus(
   status: PreviewCommentStatus,
 ): Promise<PreviewComment | null> {
   try {
-    const resp = await fetch(
+    const json = await daemonJson<{ comment: PreviewComment }>(
       `/api/projects/${encodeURIComponent(projectId)}/conversations/${encodeURIComponent(conversationId)}/comments/${encodeURIComponent(commentId)}`,
       {
         method: 'PATCH',
@@ -421,8 +365,6 @@ export async function patchPreviewCommentStatus(
         body: JSON.stringify({ status }),
       },
     );
-    if (!resp.ok) return null;
-    const json = (await resp.json()) as { comment: PreviewComment };
     return json.comment ?? null;
   } catch {
     return null;
@@ -435,11 +377,10 @@ export async function deletePreviewComment(
   commentId: string,
 ): Promise<boolean> {
   try {
-    const resp = await fetch(
+    return await daemonOk(
       `/api/projects/${encodeURIComponent(projectId)}/conversations/${encodeURIComponent(conversationId)}/comments/${encodeURIComponent(commentId)}`,
       { method: 'DELETE' },
     );
-    return resp.ok;
   } catch {
     return false;
   }
@@ -452,13 +393,14 @@ export async function writeProjectTextFile(
   options?: { artifactManifest?: ArtifactManifest },
 ): Promise<ProjectFile | null> {
   try {
-    const resp = await fetch(`/api/projects/${encodeURIComponent(projectId)}/files`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, content, artifactManifest: options?.artifactManifest }),
-    });
-    if (!resp.ok) return null;
-    const json = (await resp.json()) as { file: ProjectFile };
+    const json = await daemonJson<{ file: ProjectFile }>(
+      `/api/projects/${encodeURIComponent(projectId)}/files`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, content, artifactManifest: options?.artifactManifest }),
+      },
+    );
     return json.file;
   } catch {
     return null;
@@ -471,13 +413,14 @@ export async function writeProjectBase64File(
   base64: string,
 ): Promise<ProjectFile | null> {
   try {
-    const resp = await fetch(`/api/projects/${encodeURIComponent(projectId)}/files`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, content: base64, encoding: 'base64' }),
-    });
-    if (!resp.ok) return null;
-    const json = (await resp.json()) as { file: ProjectFile };
+    const json = await daemonJson<{ file: ProjectFile }>(
+      `/api/projects/${encodeURIComponent(projectId)}/files`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, content: base64, encoding: 'base64' }),
+      },
+    );
     return json.file;
   } catch {
     return null;
@@ -493,12 +436,13 @@ export async function uploadProjectFile(
     const form = new FormData();
     form.append('file', file);
     if (desiredName) form.append('name', desiredName);
-    const resp = await fetch(`/api/projects/${encodeURIComponent(projectId)}/files`, {
-      method: 'POST',
-      body: form,
-    });
-    if (!resp.ok) return null;
-    const json = (await resp.json()) as { file: ProjectFile };
+    const json = await daemonJson<{ file: ProjectFile }>(
+      `/api/projects/${encodeURIComponent(projectId)}/files`,
+      {
+        method: 'POST',
+        body: form,
+      },
+    );
     return json.file;
   } catch {
     return null;
@@ -540,28 +484,12 @@ export async function uploadProjectFiles(
     for (const f of batch) form.append('files', f);
 
     try {
-      const resp = await fetch(
-        `/api/projects/${encodeURIComponent(projectId)}/upload`,
-        { method: 'POST', body: form },
-      );
-
-      if (!resp.ok) {
-        const payload = (await resp.json().catch(() => null)) as
-          | { code?: string; error?: string }
-          | null;
-        error = payload?.error ?? `upload failed (${resp.status})`;
-        for (const f of batch) {
-          failed.push({ name: f.name, code: payload?.code, error: error });
-        }
-        for (const f of remaining) {
-          failed.push({ name: f.name, code: payload?.code, error: error });
-        }
-        break;
-      }
-
-      const json = (await resp.json()) as {
+      const json = await daemonJson<{
         files: { name: string; path: string; size?: number; originalName?: string }[];
-      };
+      }>(`/api/projects/${encodeURIComponent(projectId)}/upload`, {
+        method: 'POST',
+        body: form,
+      });
       const responseFiles = json.files ?? [];
       uploaded.push(
         ...responseFiles.map((f) => ({
@@ -618,11 +546,7 @@ export async function deleteProjectFile(
   name: string,
 ): Promise<boolean> {
   try {
-    const resp = await fetch(
-      projectRawUrl(projectId, name),
-      { method: 'DELETE' },
-    );
-    return resp.ok;
+    return await daemonOk(projectRawUrl(projectId, name), { method: 'DELETE' });
   } catch {
     return false;
   }
@@ -630,9 +554,7 @@ export async function deleteProjectFile(
 
 export async function fetchDesignSystemPreview(id: string): Promise<string | null> {
   try {
-    const resp = await fetch(`/api/design-systems/${encodeURIComponent(id)}/preview`);
-    if (!resp.ok) return null;
-    return await resp.text();
+    return await daemonText(`/api/design-systems/${encodeURIComponent(id)}/preview`);
   } catch {
     return null;
   }
@@ -640,9 +562,7 @@ export async function fetchDesignSystemPreview(id: string): Promise<string | nul
 
 export async function fetchCapabilities(): Promise<CapabilityDescriptorResponse[]> {
   try {
-    const resp = await fetch('/api/v2/capabilities');
-    if (!resp.ok) return [];
-    const json = (await resp.json()) as CapabilitiesResponse;
+    const json = await daemonJson<CapabilitiesResponse>('/api/v2/capabilities');
     return json.capabilities ?? [];
   } catch {
     return [];
@@ -651,9 +571,7 @@ export async function fetchCapabilities(): Promise<CapabilityDescriptorResponse[
 
 export async function fetchScenarios(): Promise<ScenarioManifestResponse[]> {
   try {
-    const resp = await fetch('/api/v2/scenarios');
-    if (!resp.ok) return [];
-    const json = (await resp.json()) as ScenariosResponse;
+    const json = await daemonJson<ScenariosResponse>('/api/v2/scenarios');
     return json.scenarios ?? [];
   } catch {
     return [];
@@ -662,9 +580,7 @@ export async function fetchScenarios(): Promise<ScenarioManifestResponse[]> {
 
 export async function fetchDesignSystemShowcase(id: string): Promise<string | null> {
   try {
-    const resp = await fetch(`/api/design-systems/${encodeURIComponent(id)}/showcase`);
-    if (!resp.ok) return null;
-    return await resp.text();
+    return await daemonText(`/api/design-systems/${encodeURIComponent(id)}/showcase`);
   } catch {
     return null;
   }

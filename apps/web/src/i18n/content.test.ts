@@ -2,7 +2,7 @@ import { readdir, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { parseFrontmatter } from '../../../daemon/src/frontmatter';
+import { parseFrontmatter } from '../../../daemon/src/resources/frontmatter';
 import { GERMAN_CONTENT_IDS } from './content';
 
 const repoRoot = fileURLToPath(new URL('../../../../', import.meta.url));

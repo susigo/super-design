@@ -19,8 +19,8 @@ import {
   upsertPreviewComment,
   writeProjectTextFile,
 } from '../providers/registry';
-import { composeSystemPrompt } from '@open-design/contracts';
 import { navigate } from '../router';
+import { toProjectSystemPrompt } from '../view-models/chat';
 import { agentDisplayName } from '../utils/agentLabels';
 import { playSound, showCompletionNotification } from '../utils/notifications';
 import { DEFAULT_NOTIFICATIONS } from '../state/config';
@@ -388,15 +388,9 @@ export function ProjectView({
 
   const composedSystemPrompt = useCallback(async (): Promise<string> => {
     let skillBody: string | undefined;
-    let skillName: string | undefined;
-    let skillMode: SkillSummary['mode'] | undefined;
     let designSystemBody: string | undefined;
-    let designSystemTitle: string | undefined;
 
     if (project.skillId) {
-      const summary = skills.find((s) => s.id === project.skillId);
-      skillName = summary?.name;
-      skillMode = summary?.mode;
       const cached = skillCache.current.get(project.skillId);
       if (cached !== undefined) {
         skillBody = cached;
@@ -409,8 +403,6 @@ export function ProjectView({
       }
     }
     if (project.designSystemId) {
-      const summary = designSystems.find((d) => d.id === project.designSystemId);
-      designSystemTitle = summary?.title;
       const cached = designCache.current.get(project.designSystemId);
       if (cached !== undefined) {
         designSystemBody = cached;
@@ -436,13 +428,12 @@ export function ProjectView({
         }
       }
     }
-    return composeSystemPrompt({
+    return toProjectSystemPrompt({
+      project,
+      skills,
+      designSystems,
       skillBody,
-      skillName,
-      skillMode,
       designSystemBody,
-      designSystemTitle,
-      metadata: project.metadata,
       template,
     });
   }, [
