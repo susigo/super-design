@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { inferLegacyManifest, validateArtifactManifestInput } from '../src/artifact-manifest.js';
+import { inferLegacyManifest, validateArtifactManifestInput } from '../src/artifacts/artifact-manifest.js';
 
 function validBase() {
   return {

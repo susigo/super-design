@@ -22,7 +22,7 @@ import {
   DESIGN_MD_TOOL_SCHEMA,
   renderDesignMd,
   sanitizeDesignSystemSlug,
-} from './prompts/design-import.js';
+} from '../prompts/design-import.js';
 
 const TOOL_NAME = 'emit_design_md';
 const REQUEST_TIMEOUT_MS = 90_000;

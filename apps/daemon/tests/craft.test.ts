@@ -4,7 +4,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { loadCraftSections } from '../src/craft.js';
+import { loadCraftSections } from '../src/resources/craft.js';
 
 let craftDir;
 

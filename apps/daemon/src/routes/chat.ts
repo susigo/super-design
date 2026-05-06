@@ -10,19 +10,19 @@ import {
   isKnownModel,
   resolveAgentBin,
   sanitizeCustomModel,
-} from '../agents.js';
+} from '../agents/index.js';
 import { listSkills } from '../skills.js';
-import { listDesignSystems, readDesignSystem } from '../design-systems.js';
-import { attachAcpSession } from '../acp.js';
-import { attachPiRpcSession } from '../pi-rpc.js';
-import { createClaudeStreamHandler } from '../claude-stream.js';
-import { createCopilotStreamHandler } from '../copilot-stream.js';
-import { createJsonEventStreamHandler } from '../json-event-stream.js';
+import { listDesignSystems, readDesignSystem } from '../resources/design-systems.js';
+import { attachAcpSession } from '../agents/acp.js';
+import { attachPiRpcSession } from '../agents/pi-rpc.js';
+import { createClaudeStreamHandler } from '../agents/claude-stream.js';
+import { createCopilotStreamHandler } from '../agents/copilot-stream.js';
+import { createJsonEventStreamHandler } from '../agents/json-event-stream.js';
 import { getProject, getTemplate } from '../db.js';
-import { ensureProject, listFiles } from '../projects.js';
-import { loadCraftSections } from '../craft.js';
-import { writeUsageLog } from '../usage-log.js';
-import { textPriceFor } from '../pricing.js';
+import { ensureProject, listFiles } from '../projects/index.js';
+import { loadCraftSections } from '../resources/craft.js';
+import { writeUsageLog } from '../billing/usage-log.js';
+import { textPriceFor } from '../billing/pricing.js';
 import {
   createSseErrorPayload,
   createSseResponse,
@@ -30,7 +30,7 @@ import {
   sendApiError,
   validateExternalApiBaseUrl,
 } from './helpers.js';
-import { normalizeCommentAttachments, renderCommentAttachmentHint } from './comment-helpers.js';
+import { normalizeCommentAttachments, renderCommentAttachmentHint } from '../project-status/comment-helpers.js';
 
 export function createChatRouter(ctx): import("express").Router {
   const router = express.Router();

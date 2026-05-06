@@ -4,7 +4,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { readProjectFile, validateProjectPath } from './projects.js';
+import { readProjectFile, validateProjectPath } from './index.js';
 
 export const VERCEL_PROVIDER_ID = 'vercel-self';
 export const SAVED_TOKEN_MASK = 'saved-vercel-token';

@@ -14,9 +14,9 @@ import {
 } from '../media-models.js';
 import { readMaskedConfig, writeConfig } from '../media-config.js';
 import { readAppConfig, writeAppConfig } from '../app-config.js';
-import { writeProjectFile } from '../projects.js';
-import { writeUsageLog } from '../usage-log.js';
-import { imagePriceFor } from '../pricing.js';
+import { writeProjectFile } from '../projects/index.js';
+import { writeUsageLog } from '../billing/usage-log.js';
+import { imagePriceFor } from '../billing/pricing.js';
 import { isLocalSameOrigin, sendApiError } from './helpers.js';
 
 const mediaTasks = new Map();

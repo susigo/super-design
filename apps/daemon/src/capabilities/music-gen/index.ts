@@ -9,7 +9,7 @@ import {
   modelsForSurface,
 } from '../../media-models.js';
 import { resolveProviderConfig } from '../../media-config.js';
-import { ensureProject, kindFor, mimeFor, sanitizeName } from '../../projects.js';
+import { ensureProject, kindFor, mimeFor, sanitizeName } from '../../projects/index.js';
 import { createCapabilityTracer } from '../../orchestrator/tracer.js';
 import { createPassThroughQuotaChecker } from '../../orchestrator/quota.js';
 import {

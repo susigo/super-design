@@ -5,7 +5,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
 import { lintArtifact, renderFindingsForAgent } from '../lint-artifact.js';
-import { decodeMultipartFilename, sanitizeName } from '../projects.js';
+import { decodeMultipartFilename, sanitizeName } from '../projects/index.js';
 import { sanitizeSlug, sendApiError } from './helpers.js';
 
 const UPLOAD_DIR = path.join(os.tmpdir(), 'od-uploads');

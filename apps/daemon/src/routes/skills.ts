@@ -2,7 +2,7 @@
 import express from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
-import { detectAgents } from '../agents.js';
+import { detectAgents } from '../agents/index.js';
 import { listSkills } from '../skills.js';
 
 function assembleExample(templateHtml, slidesHtml, title) {

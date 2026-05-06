@@ -5,7 +5,7 @@
 
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
-import { parseFrontmatter } from "./frontmatter.js";
+import { parseFrontmatter } from "./resources/frontmatter.js";
 
 export async function listSkills(skillsRoot) {
   const out = [];

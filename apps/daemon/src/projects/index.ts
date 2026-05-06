@@ -14,7 +14,7 @@ import {
   inferLegacyManifest,
   parsePersistedManifest,
   validateArtifactManifestInput,
-} from './artifact-manifest.js';
+} from '../artifacts/artifact-manifest.js';
 
 const FORBIDDEN_SEGMENT = /^$|^\.\.?$/;
 

@@ -42,7 +42,7 @@ import {
   readVercelConfig,
   VERCEL_PROVIDER_ID,
   writeVercelConfig,
-} from '../deploy.js';
+} from '../projects/deploy.js';
 import {
   buildProjectArchive,
   decodeMultipartFilename,
@@ -54,14 +54,14 @@ import {
   removeProjectDir,
   sanitizeName,
   writeProjectFile,
-} from '../projects.js';
-import { validateArtifactManifestInput } from '../artifact-manifest.js';
-import { buildDocumentPreview } from '../document-preview.js';
-import { importClaudeDesignZip } from '../claude-design-import.js';
+} from '../projects/index.js';
+import { validateArtifactManifestInput } from '../artifacts/artifact-manifest.js';
+import { buildDocumentPreview } from '../artifacts/document-preview.js';
+import { importClaudeDesignZip } from '../resources/claude-design-import.js';
 import {
   normalizeProjectDisplayStatus,
   composeProjectDisplayStatus,
-} from './project-status-helpers.js';
+} from '../project-status/helpers.js';
 import {
   randomId,
   sanitizeArchiveFilename,

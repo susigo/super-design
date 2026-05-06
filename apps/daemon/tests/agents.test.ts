@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { AGENT_DEFS, resolveAgentExecutable } from '../src/agents.js';
+import { AGENT_DEFS, resolveAgentExecutable } from '../src/agents/index.js';
 
 const codex = AGENT_DEFS.find((agent) => agent.id === 'codex');
 const copilot = AGENT_DEFS.find((agent) => agent.id === 'copilot');

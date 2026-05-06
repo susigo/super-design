@@ -8,15 +8,15 @@ import {
   findDesignSystemRoot,
   listDesignSystems,
   readDesignSystem,
-} from '../design-systems.js';
-import { extractDesignSystem } from '../design-import-extract.js';
+} from '../resources/design-systems.js';
+import { extractDesignSystem } from '../resources/design-import-extract.js';
 import { sanitizeDesignSystemSlug } from '../prompts/design-import.js';
-import { renderDesignSystemPreview } from '../design-system-preview.js';
-import { renderDesignSystemShowcase } from '../design-system-showcase.js';
-import { listPromptTemplates, readPromptTemplate } from '../prompt-templates.js';
-import { decodeMultipartFilename, kindFor, mimeFor, sanitizeName } from '../projects.js';
-import { textPriceFor } from '../pricing.js';
-import { writeUsageLog } from '../usage-log.js';
+import { renderDesignSystemPreview } from '../resources/design-system-preview.js';
+import { renderDesignSystemShowcase } from '../resources/design-system-showcase.js';
+import { listPromptTemplates, readPromptTemplate } from '../resources/prompt-templates.js';
+import { decodeMultipartFilename, kindFor, mimeFor, sanitizeName } from '../projects/index.js';
+import { textPriceFor } from '../billing/pricing.js';
+import { writeUsageLog } from '../billing/usage-log.js';
 import { isLocalSameOrigin, sendApiError, validateExternalApiBaseUrl } from './helpers.js';
 
 const UPLOAD_DIR = path.join(os.tmpdir(), 'od-uploads');

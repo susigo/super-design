@@ -24,8 +24,8 @@ import {
   rewriteCssReferences,
   rewriteEntryHtmlReferences,
   waitForReachableDeploymentUrl,
-} from '../src/deploy.js';
-import { ensureProject } from '../src/projects.js';
+} from '../src/projects/deploy.js';
+import { ensureProject } from '../src/projects/index.js';
 
 async function setupProject() {
   const root = await mkdtemp(path.join(os.tmpdir(), 'od-deploy-test-'));

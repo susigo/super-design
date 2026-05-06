@@ -58,7 +58,7 @@ import {
   kindFor,
   mimeFor,
   sanitizeName,
-} from './projects.js';
+} from './projects/index.js';
 
 const execFile = promisify(execFileCb);
 

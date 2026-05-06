@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { parsePiModels, mapPiRpcEvent } from '../src/pi-rpc.js';
+import { parsePiModels, mapPiRpcEvent } from '../src/agents/pi-rpc.js';
 
 // ─── parsePiModels ─────────────────────────────────────────────────────────
 
@@ -104,7 +104,7 @@ test('parsePiModels skips duplicate default id', () => {
 // We test the pure event mapper directly — no child process, no stdin.
 // This catches regressions like tool event ordering bugs.
 
-import { createJsonLineStream } from '../src/acp.js';
+import { createJsonLineStream } from '../src/agents/acp.js';
 
 function simulateRpcSession(rpcLines, options = {}) {
   const events = [];

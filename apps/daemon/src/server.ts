@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import fs from 'node:fs';
 import { PROTOCOL_VERSION } from '@open-design/contracts';
-import { detectAgents } from './agents.js';
+import { detectAgents } from './agents/index.js';
 import { createScenarioRunner } from './orchestrator/runner.js';
 import { pptDesignScenario } from './scenarios/ppt-design/index.js';
 import { frontendDesignScenario } from './scenarios/frontend-design/index.js';

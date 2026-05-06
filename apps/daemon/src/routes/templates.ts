@@ -7,7 +7,7 @@ import {
   insertTemplate,
   listTemplates,
 } from '../db.js';
-import { listFiles, readProjectFile } from '../projects.js';
+import { listFiles, readProjectFile } from '../projects/index.js';
 import { randomId } from './helpers.js';
 
 export function createTemplatesRouter(ctx): import("express").Router {
